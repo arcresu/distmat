@@ -1,0 +1,14 @@
+[package]
+name = "distmat"
+version = "0.2.0"
+edition = "2021"
+authors = ["Carl Suster <carl@contraflo.ws>"]
+description = "Distance matrix data types and file formats"
+license = "MIT OR Apache-2.0"
+categories = ["mathematics", "parsing", "science"]
+repository = "https://github.com/arcresu/distmat/"
+readme = "README.md"
+
+[dependencies]
+thiserror = "1.0"
+flate2 = "1.0"
