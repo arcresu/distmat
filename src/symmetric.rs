@@ -229,7 +229,7 @@ impl<D: Copy> DistMatrix<D> {
             .filter_map(|((i, j), &v)| {
                 let keep =
                     positions.binary_search(&i).is_ok() && positions.binary_search(&j).is_ok();
-                keep.then(|| v)
+                keep.then_some(v)
             })
             .collect();
         let size = positions.len();
