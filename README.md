@@ -1,5 +1,9 @@
 # distmat
 
+[![crates-io-v](https://img.shields.io/crates/v/distmat)](https://crates.io/crates/distmat)
+![crates-io-l](https://img.shields.io/crates/l/distmat)
+[![docs-rs](https://img.shields.io/docsrs/distmat)](https://docs.rs/distmat)
+
 > **Distance matrix data types and file formats**
 
 Matrix types specialised for storing pairwise distance data, and parsers for
