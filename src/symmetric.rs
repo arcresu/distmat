@@ -623,6 +623,13 @@ mod tests {
     }
 
     #[test]
+    fn test_from_iter() {
+        let m: DistMatrix<u32> = DistMatrix::from_pw_distances(&[1u32, 6, 2, 5]);
+        let m2: DistMatrix<u32> = m.data.clone().into_iter().collect();
+        assert_eq!(m, m2);
+    }
+
+    #[test]
     fn test_subset() {
         let dist1 = DistMatrix::from_pw_distances(&[1, 2, 6, 8, 3, 1, 9, 3, 4]);
         let dist2 = DistMatrix::from_pw_distances(&[1, 6, 8, 9, 3]);

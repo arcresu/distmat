@@ -353,6 +353,13 @@ mod tests {
     }
 
     #[test]
+    fn test_from_iter() {
+        let m: SquareMatrix<u32> = SquareMatrix::from_pw_distances(&[1u32, 6, 2, 5]);
+        let m2: SquareMatrix<u32> = m.data.clone().into_iter().collect();
+        assert_eq!(m, m2);
+    }
+
+    #[test]
     fn test_iter_row() {
         let m = SquareMatrix::from_pw_distances_with(&[1_i32, 6, 2, 5], |x, y| x - y);
 
