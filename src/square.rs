@@ -6,6 +6,7 @@ use std::ops::{Range, Sub};
 use std::path::Path;
 use std::slice::{self, ChunksExact};
 
+use crate::builder::{DataError, DistBuilder};
 use crate::formats::{
     parse_phylip, parse_tabular, PhylipDialect, PhylipError, Separator, TabularError, TabularShape,
 };
@@ -208,6 +209,20 @@ impl<D: Copy> SquareMatrix<D> {
             column: 0..self.size,
         }
     }
+
+    /// Build a matrix from an iterator of labelled distances.
+    ///
+    /// The iterator can be in any order so long as by the end of iteration there are exactly the
+    /// correct entries. An error will be returned if any entry is duplicated, or if there are the
+    /// wrong number of entries.
+    pub fn from_labelled_dists<S, I>(iter: I) -> Result<SquareMatrix<D>, DataError>
+    where
+        S: AsRef<str>,
+        I: IntoIterator<Item = (S, S, D)>,
+    {
+        let builder: DistBuilder<D> = std::iter::FromIterator::from_iter(iter);
+        builder.try_into()
+    }
 }
 
 /// Mirror the lower triangle and fill in the diagonal with the default value.
@@ -356,6 +371,24 @@ mod tests {
     fn test_from_iter() {
         let m: SquareMatrix<u32> = SquareMatrix::from_pw_distances(&[1u32, 6, 2, 5]);
         let m2: SquareMatrix<u32> = m.data.clone().into_iter().collect();
+        assert_eq!(m, m2);
+    }
+
+    #[test]
+    fn test_builder() {
+        let dists = vec![
+            ("A", "A", 0),
+            ("A", "B", 5),
+            ("A", "C", 1),
+            ("B", "A", 5),
+            ("B", "B", 0),
+            ("B", "C", 4),
+            ("C", "A", 1),
+            ("C", "B", 4),
+            ("C", "C", 0),
+        ];
+        let m = SquareMatrix::from_labelled_dists(dists.into_iter()).unwrap();
+        let m2 = SquareMatrix::<u32>::from_pw_distances(&[1_u32, 6, 2]);
         assert_eq!(m, m2);
     }
 

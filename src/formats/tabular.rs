@@ -1,10 +1,9 @@
-use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
 use std::io::Read;
 use std::io::{BufRead, BufReader};
 use thiserror::Error;
 
-use crate::symmetric::{flip_order, Coordinates};
+use crate::builder::{DataError, DistBuilder};
+use crate::symmetric::flip_order;
 use crate::{DistMatrix, SquareMatrix};
 
 #[derive(Clone, Copy, Debug)]
@@ -90,11 +89,8 @@ pub enum TabularError {
     #[error("reached end of file while expecting {0} more matrix rows")]
     RowsTruncated(usize),
 
-    #[error("missing entry for distance between '{0}' and  '{1}'")]
-    Missing(String, String),
-
-    #[error("dupliacte entry for distance between '{0}' and  '{1}'")]
-    Duplicate(String, String),
+    #[error("data has incorrect shape")]
+    Data(#[from] DataError),
 
     /// Unable to parse a numeric value.
     #[error("expected integer found `{0}': {1}")]
@@ -190,98 +186,53 @@ fn parse_long<R: Read>(
     separator: Separator,
     lower_triangle: bool,
 ) -> Result<(Vec<String>, Vec<u32>, usize), TabularError> {
-    let (labels, dists) = parse_long_impl(reader, separator)?;
+    let builder = parse_long_impl(reader, separator)?;
+    let labels = builder.labels.clone();
     let size = labels.len();
 
     if lower_triangle {
-        let mut data = Vec::with_capacity(size * (size - 1) / 2);
-        for (i, j) in Coordinates::new(size) {
-            let dist1 = dists.get(&(i as u32, j as u32));
-            let dist2 = dists.get(&(j as u32, i as u32));
-
-            if dist1.is_some() && dist2.is_some() {
-                return Err(TabularError::Duplicate(
-                    labels[i].clone(),
-                    labels[j].clone(),
-                ));
-            }
-
-            let dist: u32 = *dist1
-                .or(dist2)
-                .ok_or_else(|| TabularError::Missing(labels[i].clone(), labels[j].clone()))?;
-            data.push(dist);
-        }
-        Ok((labels, data, size))
+        let matrix: DistMatrix<u32> = builder.try_into()?;
+        Ok((labels, matrix.data, size))
     } else {
-        let mut data = Vec::with_capacity(size * size);
-        for i in 0..size {
-            for j in 0..size {
-                let dist: u32 = *dists
-                    .get(&(i as u32, j as u32))
-                    .ok_or_else(|| TabularError::Missing(labels[i].clone(), labels[j].clone()))?;
-                data.push(dist);
-            }
-        }
-        Ok((labels, data, size))
+        let matrix: SquareMatrix<u32> = builder.try_into()?;
+        Ok((labels, matrix.data, size))
     }
 }
-
-type DistData = BTreeMap<(u32, u32), u32>;
 
 fn parse_long_impl<R: Read>(
     reader: R,
     separator: Separator,
-) -> Result<(Vec<String>, DistData), TabularError> {
-    let mut labels = Vec::new();
-    let mut dists = BTreeMap::new();
+) -> Result<DistBuilder<u32>, TabularError> {
+    let mut builder = DistBuilder::<u32>::new();
 
-    {
-        let mut label_to_id = BTreeMap::<String, u32>::new();
+    let mut br = BufReader::new(reader);
+    let mut buf = String::new();
 
-        let mut br = BufReader::new(reader);
-        let mut buf = String::new();
+    let mut row = 0;
+    let mut header_seen = false;
 
-        let mut row = 0;
-        let mut header_seen = false;
-
-        loop {
-            row += 1;
-            buf.clear();
-            let n = br.read_line(&mut buf)?;
-            if n > 0 {
-                let parts = separator.split_3(buf.trim_end());
-                if row == 1 && !header_seen {
-                    if let Err(TabularError::Numeric(_, _)) = parts {
-                        row = 0;
-                        header_seen = true;
-                        continue;
-                    }
+    loop {
+        row += 1;
+        buf.clear();
+        let n = br.read_line(&mut buf)?;
+        if n > 0 {
+            let parts = separator.split_3(buf.trim_end());
+            if row == 1 && !header_seen {
+                if let Err(TabularError::Numeric(_, _)) = parts {
+                    row = 0;
+                    header_seen = true;
+                    continue;
                 }
-
-                let (name1, name2, distance) = parts?;
-                let id1 = *label_to_id.entry(name1.to_owned()).or_insert_with(|| {
-                    labels.push(name1.to_owned());
-                    labels.len() as u32 - 1
-                });
-                let id2 = *label_to_id.entry(name2.to_owned()).or_insert_with(|| {
-                    labels.push(name2.to_owned());
-                    labels.len() as u32 - 1
-                });
-                match dists.entry((id1, id2)) {
-                    Entry::Vacant(e) => {
-                        e.insert(distance);
-                    }
-                    Entry::Occupied(_) => {
-                        return Err(TabularError::Duplicate(name1.to_owned(), name2.to_owned()));
-                    }
-                }
-            } else {
-                break; // EOF
             }
+
+            let (name1, name2, distance) = parts?;
+            builder.add(name1, name2, distance)?;
+        } else {
+            break; // EOF
         }
     }
 
-    Ok((labels, dists))
+    Ok(builder)
 }
 
 impl Separator {

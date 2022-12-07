@@ -18,10 +18,12 @@ use std::io::{self, Read, Seek, SeekFrom};
 use std::ops::Sub;
 use std::path::Path;
 
+mod builder;
 pub mod formats;
 pub mod square;
 pub mod symmetric;
 
+pub use builder::DataError;
 pub use square::SquareMatrix;
 pub use symmetric::DistMatrix;
 

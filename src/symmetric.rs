@@ -5,6 +5,7 @@ use std::ops::Sub;
 use std::path::Path;
 use std::slice;
 
+use crate::builder::{DataError, DistBuilder};
 use crate::formats::{
     parse_phylip_lt, parse_tabular_lt, PhylipDialect, PhylipError, Separator, TabularError,
 };
@@ -235,6 +236,20 @@ impl<D: Copy> DistMatrix<D> {
         let size = positions.len();
         assert_eq!(size, n_items(data.len()));
         DistMatrix { data, size }
+    }
+
+    /// Build a matrix from an iterator of labelled distances.
+    ///
+    /// The iterator can be in any order so long as by the end of iteration there are exactly the
+    /// correct entries. An error will be returned if any entry is duplicated, or if there are the
+    /// wrong number of entries.
+    pub fn from_labelled_dists<S, I>(iter: I) -> Result<DistMatrix<D>, DataError>
+    where
+        S: AsRef<str>,
+        I: IntoIterator<Item = (S, S, D)>,
+    {
+        let builder: DistBuilder<D> = std::iter::FromIterator::from_iter(iter);
+        builder.try_into()
     }
 }
 
@@ -626,6 +641,14 @@ mod tests {
     fn test_from_iter() {
         let m: DistMatrix<u32> = DistMatrix::from_pw_distances(&[1u32, 6, 2, 5]);
         let m2: DistMatrix<u32> = m.data.clone().into_iter().collect();
+        assert_eq!(m, m2);
+    }
+
+    #[test]
+    fn test_builder() {
+        let dists = vec![("A", "B", 5), ("A", "C", 1), ("C", "B", 4)];
+        let m = DistMatrix::from_labelled_dists(dists.into_iter()).unwrap();
+        let m2 = DistMatrix::<u32>::from_pw_distances(&[1_u32, 6, 2]);
         assert_eq!(m, m2);
     }
 
