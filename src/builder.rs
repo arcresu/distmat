@@ -5,11 +5,16 @@ use thiserror::Error;
 use crate::symmetric::Coordinates;
 use crate::{DistMatrix, SquareMatrix};
 
+/// Error encountered when attempting to build a matrix from labelled distances.
+///
+/// See [DistMatrix::from_labelled_dists] and [SquareMatrix::from_labelled_dists].
 #[derive(Error, Debug)]
 pub enum DataError {
+    /// The matrix has missing elements.
     #[error("missing entry for distance between '{0}' and  '{1}'")]
     Missing(String, String),
 
+    /// The matrix has duplicate elements.
     #[error("duplicate entry for distance between '{0}' and  '{1}'")]
     Duplicate(String, String),
 }
@@ -81,7 +86,8 @@ impl<D: Copy> TryFrom<DistBuilder<D>> for SquareMatrix<D> {
                 data.push(dist);
             }
         }
-        Ok(SquareMatrix { data, size })
+        let labels = Some(builder.labels);
+        Ok(SquareMatrix { data, size, labels })
     }
 }
 
@@ -107,7 +113,8 @@ impl<D: Copy> TryFrom<DistBuilder<D>> for DistMatrix<D> {
             })?;
             data.push(dist);
         }
-        Ok(DistMatrix { data, size })
+        let labels = Some(builder.labels);
+        Ok(DistMatrix { data, size, labels })
     }
 }
 
@@ -143,7 +150,8 @@ mod tests {
         builder.add("B", "B", 0).unwrap();
         builder.add("B", "C", 4).unwrap();
 
-        let m: SquareMatrix<u32> = builder.try_into().unwrap();
+        let mut m: SquareMatrix<u32> = builder.try_into().unwrap();
+        m.set_labels(None);
         let m2 = SquareMatrix::<u32>::from_pw_distances(&[1u32, 6, 2]);
         assert_eq!(m, m2);
     }
@@ -170,7 +178,8 @@ mod tests {
         builder.add("C", "A", 1).unwrap();
         builder.add("C", "B", 4).unwrap();
 
-        let m: DistMatrix<u32> = builder.try_into().unwrap();
+        let mut m: DistMatrix<u32> = builder.try_into().unwrap();
+        m.set_labels(None);
         let m2 = DistMatrix::<u32>::from_pw_distances(&[1u32, 6, 2]);
         assert_eq!(m, m2);
     }
@@ -202,7 +211,8 @@ mod tests {
         ];
 
         let m: DistBuilder<u32> = dists.into_iter().map(|x| (x.a, x.b, x.distance)).collect();
-        let m: DistMatrix<u32> = m.try_into().unwrap();
+        let mut m: DistMatrix<u32> = m.try_into().unwrap();
+        m.set_labels(None);
         let m2 = DistMatrix::<u32>::from_pw_distances(&[1u32, 6, 2]);
         assert_eq!(m, m2);
     }

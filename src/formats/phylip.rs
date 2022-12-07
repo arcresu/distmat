@@ -67,24 +67,23 @@ pub enum PhylipError {
 }
 
 /// Parse a distance matrix in a square format.
-pub fn parse<R: Read>(
-    reader: R,
-    dialect: PhylipDialect,
-) -> Result<(Vec<String>, SquareMatrix<f32>), PhylipError> {
+pub fn parse<R: Read>(reader: R, dialect: PhylipDialect) -> Result<SquareMatrix<f32>, PhylipError> {
     let (labels, data, size) = parse_impl(reader, dialect, false)?;
-    let matrix = SquareMatrix { data, size };
-    Ok((labels, matrix))
+    let labels = Some(labels);
+    let matrix = SquareMatrix { data, size, labels };
+    Ok(matrix)
 }
 
 /// Parse a distance matrix where only the lower triangle is represented.
 pub fn parse_lt<R: Read>(
     reader: R,
     dialect: PhylipDialect,
-) -> Result<(Vec<String>, DistMatrix<f32>), PhylipError> {
+) -> Result<DistMatrix<f32>, PhylipError> {
     let (labels, data, size) = parse_impl(reader, dialect, true)?;
+    let labels = Some(labels);
     let data = flip_order(&data, size);
-    let matrix = DistMatrix { data, size };
-    Ok((labels, matrix))
+    let matrix = DistMatrix { data, size, labels };
+    Ok(matrix)
 }
 
 fn parse_impl<R: Read>(
@@ -203,55 +202,58 @@ mod tests {
     fn test_square() {
         let f = include_bytes!("../../tests/phylip/square.dist");
 
-        let (labels, matrix) = parse(f.as_slice(), PhylipDialect::Strict).unwrap();
-        assert_eq!(labels, expected_labels());
+        let mut matrix = parse(f.as_slice(), PhylipDialect::Strict).unwrap();
+        assert_eq!(matrix.labels(), Some(&expected_labels()[..]));
+        matrix.set_labels(None);
         assert_eq!(matrix, expected_matrix());
 
-        let (labels, matrix) = parse(f.as_slice(), PhylipDialect::Relaxed).unwrap();
-        assert_eq!(labels, expected_labels());
+        let mut matrix = parse(f.as_slice(), PhylipDialect::Relaxed).unwrap();
+        assert_eq!(matrix.labels(), Some(&expected_labels()[..]));
+        matrix.set_labels(None);
         assert_eq!(matrix, expected_matrix());
     }
 
     #[test]
     fn test_square_multiline() {
         let f = include_bytes!("../../tests/phylip/square_multiline.dist");
-        let (labels, matrix) = parse(f.as_slice(), PhylipDialect::Relaxed).unwrap();
-        assert_eq!(labels, expected_labels());
+        let mut matrix = parse(f.as_slice(), PhylipDialect::Relaxed).unwrap();
+        assert_eq!(matrix.labels(), Some(&expected_labels()[..]));
+        matrix.set_labels(None);
         assert_eq!(matrix, expected_matrix());
     }
 
     #[test]
     fn test_lower_triangle() {
         let f = include_bytes!("../../tests/phylip/lower.dist");
-        let (labels, matrix) = parse_lt(f.as_slice(), PhylipDialect::Relaxed).unwrap();
-        assert_eq!(labels, expected_labels());
+        let mut matrix = parse_lt(f.as_slice(), PhylipDialect::Relaxed).unwrap();
+        assert_eq!(matrix.labels(), Some(&expected_labels()[..]));
+        matrix.set_labels(None);
         assert_eq!(matrix, expected_matrix().lower_triangle());
     }
 
     #[test]
     fn test_lower_triangle_multiline() {
         let f = include_bytes!("../../tests/phylip/lower_multiline.dist");
-        let (labels, matrix) = parse_lt(f.as_slice(), PhylipDialect::Strict).unwrap();
+        let mut matrix = parse_lt(f.as_slice(), PhylipDialect::Strict).unwrap();
+        let labs = vec![
+            "Mouse".to_owned(),
+            "Bovine".to_owned(),
+            "Lemur".to_owned(),
+            "Tarsier".to_owned(),
+            "Squir Monk".to_owned(),
+            "Jpn Macaq".to_owned(),
+            "Rhesus Mac".to_owned(),
+            "Crab-E.Mac".to_owned(),
+            "BarbMacaq".to_owned(),
+            "Gibbon".to_owned(),
+            "Orang".to_owned(),
+            "Gorilla".to_owned(),
+            "Chimp".to_owned(),
+            "Human".to_owned(),
+        ];
 
-        assert_eq!(
-            labels,
-            vec![
-                "Mouse",
-                "Bovine",
-                "Lemur",
-                "Tarsier",
-                "Squir Monk",
-                "Jpn Macaq",
-                "Rhesus Mac",
-                "Crab-E.Mac",
-                "BarbMacaq",
-                "Gibbon",
-                "Orang",
-                "Gorilla",
-                "Chimp",
-                "Human"
-            ]
-        );
+        assert_eq!(matrix.labels(), Some(&labs[..]));
+        matrix.set_labels(None);
 
         assert_eq!(
             matrix,

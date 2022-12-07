@@ -20,6 +20,7 @@ use crate::{open_file, AbsDiff};
 pub struct DistMatrix<D> {
     pub(crate) data: Vec<D>,
     pub(crate) size: usize,
+    pub(crate) labels: Option<Vec<String>>,
 }
 
 pub struct Rows<'a, D> {
@@ -50,7 +51,11 @@ impl<D> FromIterator<D> for DistMatrix<D> {
         let data: Vec<D> = iter.into_iter().collect();
         let size = n_items(data.len());
         assert_eq!(n_entries(size), data.len());
-        DistMatrix { data, size }
+        DistMatrix {
+            data,
+            size,
+            labels: None,
+        }
     }
 }
 
@@ -93,12 +98,30 @@ impl<D> DistMatrix<D> {
         self.data
     }
 
+    /// An optional list of labels for the underlying elements.
+    #[inline]
+    pub fn labels(&self) -> Option<&[String]> {
+        self.labels.as_deref()
+    }
+
+    /// Set or clear labels for the underlying elements.
+    ///
+    /// Panics if the number of labels is not the same as `self.size()`.
+    #[inline]
+    pub fn set_labels(&mut self, new_labels: Option<Vec<String>>) {
+        if let Some(ref labels) = new_labels {
+            assert_eq!(labels.len(), self.size);
+        }
+        self.labels = new_labels;
+    }
+
     /// Convert distances using the provided function.
     #[inline]
     pub fn map_with<T, F: FnMut(&D) -> T>(&self, mapper: F) -> DistMatrix<T> {
         DistMatrix {
             data: self.data.iter().map(mapper).collect(),
             size: self.size,
+            labels: self.labels.clone(),
         }
     }
 
@@ -119,7 +142,7 @@ impl DistMatrix<f32> {
     pub fn from_phylip<R: Read>(
         reader: R,
         dialect: PhylipDialect,
-    ) -> Result<(Vec<String>, DistMatrix<f32>), PhylipError> {
+    ) -> Result<DistMatrix<f32>, PhylipError> {
         parse_phylip_lt(reader, dialect)
     }
 
@@ -134,7 +157,7 @@ impl DistMatrix<f32> {
     pub fn from_phylip_file<P: AsRef<Path>>(
         path: P,
         dialect: PhylipDialect,
-    ) -> Result<(Vec<String>, DistMatrix<f32>), PhylipError> {
+    ) -> Result<DistMatrix<f32>, PhylipError> {
         let reader = open_file(path)?;
         parse_phylip_lt(reader, dialect)
     }
@@ -149,7 +172,7 @@ impl DistMatrix<f32> {
     pub fn from_tabular<R: Read>(
         reader: R,
         separator: Separator,
-    ) -> Result<(Vec<String>, DistMatrix<u32>), TabularError> {
+    ) -> Result<DistMatrix<u32>, TabularError> {
         parse_tabular_lt(reader, separator)
     }
 
@@ -165,7 +188,7 @@ impl DistMatrix<f32> {
     pub fn from_tabular_file<P: AsRef<Path>>(
         path: P,
         separator: Separator,
-    ) -> Result<(Vec<String>, DistMatrix<u32>), TabularError> {
+    ) -> Result<DistMatrix<u32>, TabularError> {
         let reader = open_file(path)?;
         parse_tabular_lt(reader, separator)
     }
@@ -209,6 +232,22 @@ impl<D: Copy> DistMatrix<D> {
         Some(self.data[index_for(self.size, row, col)])
     }
 
+    /// Retrieve an element from the lower triangle of the distance matrix.
+    ///
+    /// Returns `None` if either `row` or `col` are not known labels, including
+    /// if the matrix has no labels.
+    pub fn get_by_name<S: AsRef<str>>(&self, row: S, col: S) -> Option<D> {
+        let row: usize = self
+            .labels
+            .as_ref()
+            .and_then(|labs| labs.iter().position(|l| l == row.as_ref()))?;
+        let col: usize = self
+            .labels
+            .as_ref()
+            .and_then(|labs| labs.iter().position(|l| l == col.as_ref()))?;
+        self.get(row, col)
+    }
+
     /// Copy a subset of the distance matrix corresponding to the specified row/column positions.
     ///
     /// Panics if any of the positions are out of range.
@@ -217,6 +256,7 @@ impl<D: Copy> DistMatrix<D> {
             return DistMatrix {
                 data: Vec::new(),
                 size: 1,
+                labels: None,
             };
         }
 
@@ -235,7 +275,16 @@ impl<D: Copy> DistMatrix<D> {
             .collect();
         let size = positions.len();
         assert_eq!(size, n_items(data.len()));
-        DistMatrix { data, size }
+
+        let labels = self.labels.as_ref().map(|labs| {
+            let mut new_labs = Vec::with_capacity(positions.len());
+            for pos in positions {
+                new_labs.push(labs[pos].clone());
+            }
+            new_labs
+        });
+
+        DistMatrix { data, size, labels }
     }
 
     /// Build a matrix from an iterator of labelled distances.
@@ -266,6 +315,22 @@ impl<D: Copy + Default> DistMatrix<D> {
             return Some(D::default());
         }
         Some(self.data[index_for(self.size, row.min(col), row.max(col))])
+    }
+
+    /// Retrieve an element from the distance matrix.
+    ///
+    /// Returns `None` if either `row` or `col` are not known labels, including
+    /// if the matrix has no labels.
+    pub fn get_symmetric_by_name<S: AsRef<str>>(&self, row: S, col: S) -> Option<D> {
+        let row: usize = self
+            .labels
+            .as_ref()
+            .and_then(|labs| labs.iter().position(|l| l == row.as_ref()))?;
+        let col: usize = self
+            .labels
+            .as_ref()
+            .and_then(|labs| labs.iter().position(|l| l == col.as_ref()))?;
+        self.get_symmetric(row, col)
     }
 
     /// Iterator over pairwise distances from the specified point to all points in order, including
@@ -584,6 +649,29 @@ mod tests {
     }
 
     #[test]
+    fn test_getters() {
+        let m: DistMatrix<u32> = [1, 2, 3, 4, 1, 2, 3, 1, 2, 1].into_iter().collect();
+        assert_eq!(m.get(0, 3), Some(3));
+        assert_eq!(m.get(3, 0), None);
+        assert_eq!(m.get_symmetric(3, 0), Some(3));
+    }
+
+    #[test]
+    fn test_getters_by_name() {
+        let mut m: DistMatrix<u32> = [1, 2, 3, 4, 1, 2, 3, 1, 2, 1].into_iter().collect();
+        m.set_labels(Some(vec![
+            "A".to_owned(),
+            "B".to_owned(),
+            "C".to_owned(),
+            "D".to_owned(),
+            "E".to_owned(),
+        ]));
+        assert_eq!(m.get_by_name("A", "D"), Some(3));
+        assert_eq!(m.get_by_name("D", "A"), None);
+        assert_eq!(m.get_symmetric_by_name("D", "A"), Some(3));
+    }
+
+    #[test]
     fn test_iter_rows() {
         fn expect_row(row: Option<Row<u32>>, reference: Vec<u32>) {
             assert!(row.is_some());
@@ -648,7 +736,8 @@ mod tests {
     fn test_builder() {
         let dists = vec![("A", "B", 5), ("A", "C", 1), ("C", "B", 4)];
         let m = DistMatrix::from_labelled_dists(dists.into_iter()).unwrap();
-        let m2 = DistMatrix::<u32>::from_pw_distances(&[1_u32, 6, 2]);
+        let mut m2 = DistMatrix::<u32>::from_pw_distances(&[1_u32, 6, 2]);
+        m2.set_labels(Some(vec!["A".to_owned(), "B".to_owned(), "C".to_owned()]));
         assert_eq!(m, m2);
     }
 
@@ -661,9 +750,14 @@ mod tests {
 
     #[test]
     fn test_from_file() {
-        let (labels, m) =
-            DistMatrix::from_tabular_file("tests/long_lt.dat", Separator::Char('\t')).unwrap();
-        assert_eq!(labels, vec!["seq1", "seq2", "seq3", "seq4"]);
+        let m = DistMatrix::from_tabular_file("tests/long_lt.dat", Separator::Char('\t')).unwrap();
+        let labs = vec![
+            "seq1".to_owned(),
+            "seq2".to_owned(),
+            "seq3".to_owned(),
+            "seq4".to_owned(),
+        ];
+        assert_eq!(m.labels(), Some(&labs[..]));
         assert_eq!(m.size(), 4);
     }
 }

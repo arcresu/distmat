@@ -102,24 +102,23 @@ pub fn parse<R: Read>(
     reader: R,
     separator: Separator,
     shape: TabularShape,
-) -> Result<(Vec<String>, SquareMatrix<u32>), TabularError> {
+) -> Result<SquareMatrix<u32>, TabularError> {
     let (labels, data, size) = match shape {
         TabularShape::Wide => parse_wide(reader, separator)?,
         TabularShape::Long => parse_long(reader, separator, false)?,
     };
-    let matrix = SquareMatrix { data, size };
-    Ok((labels, matrix))
+    let labels = Some(labels);
+    let matrix = SquareMatrix { data, size, labels };
+    Ok(matrix)
 }
 
 /// Parse a distance matrix where only the lower triangle is represented.
-pub fn parse_lt<R: Read>(
-    reader: R,
-    separator: Separator,
-) -> Result<(Vec<String>, DistMatrix<u32>), TabularError> {
+pub fn parse_lt<R: Read>(reader: R, separator: Separator) -> Result<DistMatrix<u32>, TabularError> {
     let (labels, data, size) = parse_long(reader, separator, true)?;
+    let labels = Some(labels);
     let data = flip_order(&data, size);
-    let matrix = DistMatrix { data, size };
-    Ok((labels, matrix))
+    let matrix = DistMatrix { data, size, labels };
+    Ok(matrix)
 }
 
 fn parse_wide<R: Read>(

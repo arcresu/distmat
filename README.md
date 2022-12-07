@@ -33,11 +33,11 @@ fn main() {
         total += row.sum();
     }
 
-    let (_labels, _matrix) =
+    let _matrix =
         SquareMatrix::from_tabular_file("snp-dists.dat", Separator::Char('\t'), TabularShape::Wide).unwrap();
-    let (_labels, _matrix) =
+    let _matrix =
         SquareMatrix::from_phylip_file("phylip.dist", PhylipDialect::Strict).unwrap();
-    let (_labels, _matrix) =
+    let _matrix =
         DistMatrix::from_phylip_file("phylip_lt.dist", PhylipDialect::Relaxed).unwrap();
 }
 
@@ -64,3 +64,12 @@ Non-goals:
 ## License
 
 Dual-licensed under [MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE).
+
+
+## Changes
+
+### unreleased
+
+  * `DistMatrix` and `SquareMatrix` can optionally store a list of labels
+    corresponding to the underlying elements (e.g. taxa). There are new methods
+    to get values by label.

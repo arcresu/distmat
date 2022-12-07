@@ -19,6 +19,7 @@ use crate::{open_file, AbsDiff, DistMatrix};
 pub struct SquareMatrix<D> {
     pub(crate) data: Vec<D>,
     pub(crate) size: usize,
+    pub(crate) labels: Option<Vec<String>>,
 }
 
 pub struct Rows<'a, D>(ChunksExact<'a, D>);
@@ -39,7 +40,11 @@ impl<D> FromIterator<D> for SquareMatrix<D> {
         let data: Vec<D> = iter.into_iter().collect();
         let size = (data.len() as f64).sqrt() as usize;
         assert_eq!(size * size, data.len());
-        SquareMatrix { data, size }
+        SquareMatrix {
+            data,
+            size,
+            labels: None,
+        }
     }
 }
 
@@ -74,7 +79,11 @@ impl<D> SquareMatrix<D> {
                 data.push(dist_fn(t1, t2))
             }
         }
-        SquareMatrix { data, size }
+        SquareMatrix {
+            data,
+            size,
+            labels: None,
+        }
     }
 
     /// Return the stored distance data in row-major order.
@@ -83,12 +92,30 @@ impl<D> SquareMatrix<D> {
         self.data
     }
 
+    /// An optional list of labels for the underlying elements.
+    #[inline]
+    pub fn labels(&self) -> Option<&[String]> {
+        self.labels.as_deref()
+    }
+
+    /// Set or clear labels for the underlying elements.
+    ///
+    /// Panics if the number of labels is not the same as `self.size()`.
+    #[inline]
+    pub fn set_labels(&mut self, new_labels: Option<Vec<String>>) {
+        if let Some(ref labels) = new_labels {
+            assert_eq!(labels.len(), self.size);
+        }
+        self.labels = new_labels;
+    }
+
     /// Convert distances using the provided function.
     #[inline]
     pub fn map_with<T, F: FnMut(&D) -> T>(&self, mapper: F) -> DistMatrix<T> {
         DistMatrix {
             data: self.data.iter().map(mapper).collect(),
             size: self.size,
+            labels: self.labels.clone(),
         }
     }
 
@@ -110,7 +137,7 @@ impl SquareMatrix<u32> {
         reader: R,
         separator: Separator,
         shape: TabularShape,
-    ) -> Result<(Vec<String>, SquareMatrix<u32>), TabularError> {
+    ) -> Result<SquareMatrix<u32>, TabularError> {
         parse_tabular(reader, separator, shape)
     }
 
@@ -126,7 +153,7 @@ impl SquareMatrix<u32> {
         path: P,
         separator: Separator,
         shape: TabularShape,
-    ) -> Result<(Vec<String>, SquareMatrix<u32>), TabularError> {
+    ) -> Result<SquareMatrix<u32>, TabularError> {
         let reader = open_file(path)?;
         parse_tabular(reader, separator, shape)
     }
@@ -142,7 +169,7 @@ impl SquareMatrix<f32> {
     pub fn from_phylip<R: Read>(
         reader: R,
         dialect: PhylipDialect,
-    ) -> Result<(Vec<String>, SquareMatrix<f32>), PhylipError> {
+    ) -> Result<SquareMatrix<f32>, PhylipError> {
         parse_phylip(reader, dialect)
     }
 
@@ -157,7 +184,7 @@ impl SquareMatrix<f32> {
     pub fn from_phylip_file<P: AsRef<Path>>(
         path: P,
         dialect: PhylipDialect,
-    ) -> Result<(Vec<String>, SquareMatrix<f32>), PhylipError> {
+    ) -> Result<SquareMatrix<f32>, PhylipError> {
         let reader = open_file(path)?;
         parse_phylip(reader, dialect)
     }
@@ -177,6 +204,22 @@ impl<D: Copy> SquareMatrix<D> {
     #[inline]
     pub fn get(&self, row: usize, col: usize) -> Option<D> {
         (row <= self.size && col <= self.size).then(|| self.data[index_for(self.size, row, col)])
+    }
+
+    /// Retrieve an element from the distance matrix.
+    ///
+    /// Returns `None` if either `row` or `col` are not known labels, including
+    /// if the matrix has no labels.
+    pub fn get_by_name<S: AsRef<str>>(&self, row: S, col: S) -> Option<D> {
+        let row: usize = self
+            .labels
+            .as_ref()
+            .and_then(|labs| labs.iter().position(|l| l == row.as_ref()))?;
+        let col: usize = self
+            .labels
+            .as_ref()
+            .and_then(|labs| labs.iter().position(|l| l == col.as_ref()))?;
+        self.get(row, col)
     }
 
     /// Iterator over pairwise distances from the specified point to all points in order, including
@@ -387,9 +430,26 @@ mod tests {
             ("C", "B", 4),
             ("C", "C", 0),
         ];
-        let m = SquareMatrix::from_labelled_dists(dists.into_iter()).unwrap();
+        let mut m = SquareMatrix::from_labelled_dists(dists.into_iter()).unwrap();
+        m.set_labels(None);
         let m2 = SquareMatrix::<u32>::from_pw_distances(&[1_u32, 6, 2]);
         assert_eq!(m, m2);
+    }
+
+    #[test]
+    fn test_getters() {
+        let mut m = SquareMatrix::from_pw_distances_with(&[1_i32, 6, 2, 5], |x, y| x - y);
+        m.set_labels(Some(vec![
+            "A".to_owned(),
+            "B".to_owned(),
+            "C".to_owned(),
+            "D".to_owned(),
+        ]));
+
+        assert_eq!(m.get(1, 2), Some(4));
+        assert_eq!(m.get(2, 1), Some(-4));
+        assert_eq!(m.get_by_name("B", "C"), Some(4));
+        assert_eq!(m.get_by_name("C", "B"), Some(-4));
     }
 
     #[test]
@@ -502,22 +562,34 @@ mod tests {
 
     #[test]
     fn test_from_file() {
-        let (labels, m) = SquareMatrix::from_tabular_file(
+        let m = SquareMatrix::from_tabular_file(
             "tests/snp-dists/default.dat",
             Separator::Char('\t'),
             TabularShape::Wide,
         )
         .unwrap();
-        assert_eq!(labels, vec!["seq1", "seq2", "seq3", "seq4"]);
+        let labs = vec![
+            "seq1".to_owned(),
+            "seq2".to_owned(),
+            "seq3".to_owned(),
+            "seq4".to_owned(),
+        ];
+        assert_eq!(m.labels(), Some(&labs[..]));
         assert_eq!(m.size(), 4);
 
-        let (labels, m) = SquareMatrix::from_tabular_file(
+        let m = SquareMatrix::from_tabular_file(
             "tests/snp-dists/default.dat.gz",
             Separator::Char('\t'),
             TabularShape::Wide,
         )
         .unwrap();
-        assert_eq!(labels, vec!["seq1", "seq2", "seq3", "seq4"]);
+        let labs = vec![
+            "seq1".to_owned(),
+            "seq2".to_owned(),
+            "seq3".to_owned(),
+            "seq4".to_owned(),
+        ];
+        assert_eq!(m.labels(), Some(&labs[..]));
         assert_eq!(m.size(), 4);
     }
 }
