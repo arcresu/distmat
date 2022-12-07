@@ -292,7 +292,7 @@ impl<D: Copy> DistMatrix<D> {
     /// The iterator can be in any order so long as by the end of iteration there are exactly the
     /// correct entries. An error will be returned if any entry is duplicated, or if there are the
     /// wrong number of entries.
-    pub fn from_labelled_dists<S, I>(iter: I) -> Result<DistMatrix<D>, DataError>
+    pub fn from_labelled_distances<S, I>(iter: I) -> Result<DistMatrix<D>, DataError>
     where
         S: AsRef<str>,
         I: IntoIterator<Item = (S, S, D)>,
@@ -735,7 +735,7 @@ mod tests {
     #[test]
     fn test_builder() {
         let dists = vec![("A", "B", 5), ("A", "C", 1), ("C", "B", 4)];
-        let m = DistMatrix::from_labelled_dists(dists.into_iter()).unwrap();
+        let m = DistMatrix::from_labelled_distances(dists.into_iter()).unwrap();
         let mut m2 = DistMatrix::<u32>::from_pw_distances(&[1_u32, 6, 2]);
         m2.set_labels(Some(vec!["A".to_owned(), "B".to_owned(), "C".to_owned()]));
         assert_eq!(m, m2);

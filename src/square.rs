@@ -258,7 +258,7 @@ impl<D: Copy> SquareMatrix<D> {
     /// The iterator can be in any order so long as by the end of iteration there are exactly the
     /// correct entries. An error will be returned if any entry is duplicated, or if there are the
     /// wrong number of entries.
-    pub fn from_labelled_dists<S, I>(iter: I) -> Result<SquareMatrix<D>, DataError>
+    pub fn from_labelled_distances<S, I>(iter: I) -> Result<SquareMatrix<D>, DataError>
     where
         S: AsRef<str>,
         I: IntoIterator<Item = (S, S, D)>,
@@ -430,7 +430,7 @@ mod tests {
             ("C", "B", 4),
             ("C", "C", 0),
         ];
-        let mut m = SquareMatrix::from_labelled_dists(dists.into_iter()).unwrap();
+        let mut m = SquareMatrix::from_labelled_distances(dists.into_iter()).unwrap();
         m.set_labels(None);
         let m2 = SquareMatrix::<u32>::from_pw_distances(&[1_u32, 6, 2]);
         assert_eq!(m, m2);
