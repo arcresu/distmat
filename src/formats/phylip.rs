@@ -81,7 +81,6 @@ pub fn parse_lt<R: Read>(
 ) -> Result<DistMatrix<f32>, PhylipError> {
     let (labels, data, size) = parse_impl(reader, dialect, true)?;
     let labels = Some(labels);
-    let data = flip_order(&data, size);
     let matrix = DistMatrix { data, size, labels };
     Ok(matrix)
 }
@@ -134,6 +133,10 @@ fn parse_impl<R: Read>(
 
             break;
         }
+    }
+
+    if lower_triangle {
+        data = flip_order(&data, size);
     }
 
     Ok((labels, data, size))
