@@ -7,7 +7,7 @@ use crate::{DistMatrix, SquareMatrix};
 
 /// Error encountered when attempting to build a matrix from labelled distances.
 ///
-/// See [DistMatrix::from_labelled_dists] and [SquareMatrix::from_labelled_dists].
+/// See [DistMatrix::from_labelled_distances] and [SquareMatrix::from_labelled_distances].
 #[derive(Error, Debug)]
 pub enum DataError {
     /// The matrix has missing elements.
@@ -135,6 +135,10 @@ where
 mod tests {
     use super::*;
 
+    fn mk_labels<I: IntoIterator<Item = &'static str>>(labs: I) -> Vec<String> {
+        labs.into_iter().map(|x| x.to_owned()).collect()
+    }
+
     #[test]
     fn test_square_builder() {
         let mut builder = DistBuilder::<u32>::new();
@@ -150,9 +154,9 @@ mod tests {
         builder.add("B", "B", 0).unwrap();
         builder.add("B", "C", 4).unwrap();
 
-        let mut m: SquareMatrix<u32> = builder.try_into().unwrap();
-        m.set_labels(None);
-        let m2 = SquareMatrix::<u32>::from_pw_distances(&[1u32, 6, 2]);
+        let m: SquareMatrix<u32> = builder.try_into().unwrap();
+        let mut m2 = SquareMatrix::<u32>::from_pw_distances(&[1u32, 6, 2]);
+        m2.set_labels(mk_labels(["A", "B", "C"]));
         assert_eq!(m, m2);
     }
 
@@ -178,9 +182,9 @@ mod tests {
         builder.add("C", "A", 1).unwrap();
         builder.add("C", "B", 4).unwrap();
 
-        let mut m: DistMatrix<u32> = builder.try_into().unwrap();
-        m.set_labels(None);
-        let m2 = DistMatrix::<u32>::from_pw_distances(&[1u32, 6, 2]);
+        let m: DistMatrix<u32> = builder.try_into().unwrap();
+        let mut m2 = DistMatrix::<u32>::from_pw_distances(&[1u32, 6, 2]);
+        m2.set_labels(mk_labels(["A", "B", "C"]));
         assert_eq!(m, m2);
     }
 
@@ -194,26 +198,26 @@ mod tests {
     fn test_from_iter() {
         let dists = vec![
             Dist {
-                a: "A".to_string(),
-                b: "B".to_string(),
+                a: "A".to_owned(),
+                b: "B".to_owned(),
                 distance: 5,
             },
             Dist {
-                a: "C".to_string(),
-                b: "A".to_string(),
+                a: "C".to_owned(),
+                b: "A".to_owned(),
                 distance: 1,
             },
             Dist {
-                a: "C".to_string(),
-                b: "B".to_string(),
+                a: "C".to_owned(),
+                b: "B".to_owned(),
                 distance: 4,
             },
         ];
 
         let m: DistBuilder<u32> = dists.into_iter().map(|x| (x.a, x.b, x.distance)).collect();
-        let mut m: DistMatrix<u32> = m.try_into().unwrap();
-        m.set_labels(None);
-        let m2 = DistMatrix::<u32>::from_pw_distances(&[1u32, 6, 2]);
+        let m: DistMatrix<u32> = m.try_into().unwrap();
+        let mut m2 = DistMatrix::<u32>::from_pw_distances(&[1u32, 6, 2]);
+        m2.set_labels(mk_labels(["A", "B", "C"]));
         assert_eq!(m, m2);
     }
 }

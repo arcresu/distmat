@@ -9,6 +9,7 @@ use crate::builder::{DataError, DistBuilder};
 use crate::formats::{
     parse_phylip_lt, parse_tabular_lt, PhylipDialect, PhylipError, Separator, TabularError,
 };
+pub use crate::square::Labels;
 use crate::{open_file, AbsDiff};
 
 /// Stores the lower triangle of a matrix.
@@ -98,21 +99,28 @@ impl<D> DistMatrix<D> {
         self.data
     }
 
-    /// An optional list of labels for the underlying elements.
+    /// Iterator over labels for the underlying elements.
+    ///
+    /// If no labels are configured for this matrix, the iterator will be empty.
+    /// See [Labels::has_labels()] and [set_labels()](DistMatrix::set_labels).
     #[inline]
-    pub fn labels(&self) -> Option<&[String]> {
-        self.labels.as_deref()
+    pub fn iter_labels(&self) -> Labels {
+        Labels(self.labels.as_ref().map(|labs| labs.iter()))
     }
 
-    /// Set or clear labels for the underlying elements.
+    /// Set labels for the underlying elements.
     ///
     /// Panics if the number of labels is not the same as `self.size()`.
     #[inline]
-    pub fn set_labels(&mut self, new_labels: Option<Vec<String>>) {
-        if let Some(ref labels) = new_labels {
-            assert_eq!(labels.len(), self.size);
-        }
-        self.labels = new_labels;
+    pub fn set_labels(&mut self, new_labels: Vec<String>) {
+        assert_eq!(new_labels.len(), self.size);
+        self.labels = Some(new_labels);
+    }
+
+    /// Remove all labels for the underlying elements.
+    #[inline]
+    pub fn clear_labels(&mut self) {
+        self.labels = None;
     }
 
     /// Convert distances using the provided function.
@@ -550,6 +558,10 @@ const fn index_for(n: usize, i: usize, j: usize) -> usize {
 mod tests {
     use super::*;
 
+    fn mk_labels<I: IntoIterator<Item = &'static str>>(labs: I) -> Vec<String> {
+        labs.into_iter().map(|x| x.to_owned()).collect()
+    }
+
     #[test]
     fn test_n_items() {
         assert_eq!(n_items(0), 1);
@@ -659,13 +671,7 @@ mod tests {
     #[test]
     fn test_getters_by_name() {
         let mut m: DistMatrix<u32> = [1, 2, 3, 4, 1, 2, 3, 1, 2, 1].into_iter().collect();
-        m.set_labels(Some(vec![
-            "A".to_owned(),
-            "B".to_owned(),
-            "C".to_owned(),
-            "D".to_owned(),
-            "E".to_owned(),
-        ]));
+        m.set_labels(mk_labels(["A", "B", "C", "D", "E"]));
         assert_eq!(m.get_by_name("A", "D"), Some(3));
         assert_eq!(m.get_by_name("D", "A"), None);
         assert_eq!(m.get_symmetric_by_name("D", "A"), Some(3));
@@ -737,7 +743,7 @@ mod tests {
         let dists = vec![("A", "B", 5), ("A", "C", 1), ("C", "B", 4)];
         let m = DistMatrix::from_labelled_distances(dists.into_iter()).unwrap();
         let mut m2 = DistMatrix::<u32>::from_pw_distances(&[1_u32, 6, 2]);
-        m2.set_labels(Some(vec!["A".to_owned(), "B".to_owned(), "C".to_owned()]));
+        m2.set_labels(mk_labels(["A", "B", "C"]));
         assert_eq!(m, m2);
     }
 
@@ -751,13 +757,8 @@ mod tests {
     #[test]
     fn test_from_file() {
         let m = DistMatrix::from_tabular_file("tests/long_lt.dat", Separator::Char('\t')).unwrap();
-        let labs = vec![
-            "seq1".to_owned(),
-            "seq2".to_owned(),
-            "seq3".to_owned(),
-            "seq4".to_owned(),
-        ];
-        assert_eq!(m.labels(), Some(&labs[..]));
+        let labels: Vec<&str> = m.iter_labels().collect();
+        assert_eq!(labels, vec!["seq1", "seq2", "seq3", "seq4"]);
         assert_eq!(m.size(), 4);
     }
 }

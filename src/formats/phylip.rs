@@ -174,20 +174,8 @@ fn parse_data(line: &str, data: &mut Vec<f32>) -> Result<usize, PhylipError> {
 mod tests {
     use super::*;
 
-    fn expected_labels() -> Vec<String> {
-        vec![
-            "Bovine".to_owned(),
-            "Mouse".to_owned(),
-            "Gibbon".to_owned(),
-            "Orang".to_owned(),
-            "Gorilla".to_owned(),
-            "Chimp".to_owned(),
-            "Human".to_owned(),
-        ]
-    }
-
     fn expected_matrix() -> SquareMatrix<f32> {
-        [
+        let mut matrix: SquareMatrix<f32> = [
             0.0000, 1.6866, 1.7198, 1.6606, 1.5243, 1.6043, 1.5905, 1.6866, 0.0000, 1.5232, 1.4841,
             1.4465, 1.4389, 1.4629, 1.7198, 1.5232, 0.0000, 0.7115, 0.5958, 0.6179, 0.5583, 1.6606,
             1.4841, 0.7115, 0.0000, 0.4631, 0.5061, 0.4710, 1.5243, 1.4465, 0.5958, 0.4631, 0.0000,
@@ -195,47 +183,63 @@ mod tests {
             0.5583, 0.4710, 0.3083, 0.2692, 0.0000,
         ]
         .into_iter()
-        .collect()
+        .collect();
+        matrix.set_labels(vec![
+            "Bovine".to_owned(),
+            "Mouse".to_owned(),
+            "Gibbon".to_owned(),
+            "Orang".to_owned(),
+            "Gorilla".to_owned(),
+            "Chimp".to_owned(),
+            "Human".to_owned(),
+        ]);
+        matrix
     }
 
     #[test]
     fn test_square() {
         let f = include_bytes!("../../tests/phylip/square.dist");
 
-        let mut matrix = parse(f.as_slice(), PhylipDialect::Strict).unwrap();
-        assert_eq!(matrix.labels(), Some(&expected_labels()[..]));
-        matrix.set_labels(None);
+        let matrix = parse(f.as_slice(), PhylipDialect::Strict).unwrap();
         assert_eq!(matrix, expected_matrix());
 
-        let mut matrix = parse(f.as_slice(), PhylipDialect::Relaxed).unwrap();
-        assert_eq!(matrix.labels(), Some(&expected_labels()[..]));
-        matrix.set_labels(None);
+        let matrix = parse(f.as_slice(), PhylipDialect::Relaxed).unwrap();
         assert_eq!(matrix, expected_matrix());
     }
 
     #[test]
     fn test_square_multiline() {
         let f = include_bytes!("../../tests/phylip/square_multiline.dist");
-        let mut matrix = parse(f.as_slice(), PhylipDialect::Relaxed).unwrap();
-        assert_eq!(matrix.labels(), Some(&expected_labels()[..]));
-        matrix.set_labels(None);
+        let matrix = parse(f.as_slice(), PhylipDialect::Relaxed).unwrap();
         assert_eq!(matrix, expected_matrix());
     }
 
     #[test]
     fn test_lower_triangle() {
         let f = include_bytes!("../../tests/phylip/lower.dist");
-        let mut matrix = parse_lt(f.as_slice(), PhylipDialect::Relaxed).unwrap();
-        assert_eq!(matrix.labels(), Some(&expected_labels()[..]));
-        matrix.set_labels(None);
+        let matrix = parse_lt(f.as_slice(), PhylipDialect::Relaxed).unwrap();
         assert_eq!(matrix, expected_matrix().lower_triangle());
     }
 
     #[test]
     fn test_lower_triangle_multiline() {
         let f = include_bytes!("../../tests/phylip/lower_multiline.dist");
-        let mut matrix = parse_lt(f.as_slice(), PhylipDialect::Strict).unwrap();
-        let labs = vec![
+        let matrix = parse_lt(f.as_slice(), PhylipDialect::Strict).unwrap();
+
+        let mut m_exp: DistMatrix<f32> = [
+            1.7043, 2.0235, 2.1378, 1.5232, 1.8261, 1.9182, 2.0039, 1.9431, 1.9663, 2.0593, 1.6664,
+            1.732, 1.7101, 1.1901, 1.3287, 1.2423, 1.2508, 1.2536, 1.3066, 1.2827, 1.3296, 1.2005,
+            1.346, 1.3757, 1.3956, 1.2905, 1.3199, 1.3887, 1.4658, 1.4826, 1.4502, 1.8708, 1.5356,
+            1.4577, 1.7803, 1.6661, 1.7878, 1.3137, 1.3788, 1.3826, 1.4543, 1.6683, 1.6606, 1.5935,
+            1.7119, 1.7599, 1.0642, 1.1124, 0.9832, 1.0629, 0.9228, 1.0681, 0.9127, 1.0635, 1.0557,
+            0.1022, 0.2061, 0.3895, 0.8035, 0.7239, 0.7278, 0.7899, 0.6933, 0.2681, 0.393, 0.7109,
+            0.729, 0.7412, 0.8742, 0.7118, 0.3665, 0.8132, 0.7894, 0.8763, 0.8868, 0.7589, 0.7858,
+            0.714, 0.7966, 0.8288, 0.8542, 0.7095, 0.5959, 0.6213, 0.5612, 0.4604, 0.5065, 0.47,
+            0.3502, 0.3097, 0.2712,
+        ]
+        .into_iter()
+        .collect();
+        m_exp.set_labels(vec![
             "Mouse".to_owned(),
             "Bovine".to_owned(),
             "Lemur".to_owned(),
@@ -250,28 +254,9 @@ mod tests {
             "Gorilla".to_owned(),
             "Chimp".to_owned(),
             "Human".to_owned(),
-        ];
+        ]);
 
-        assert_eq!(matrix.labels(), Some(&labs[..]));
-        matrix.set_labels(None);
-
-        assert_eq!(
-            matrix,
-            [
-                1.7043, 2.0235, 2.1378, 1.5232, 1.8261, 1.9182, 2.0039, 1.9431, 1.9663, 2.0593,
-                1.6664, 1.732, 1.7101, 1.1901, 1.3287, 1.2423, 1.2508, 1.2536, 1.3066, 1.2827,
-                1.3296, 1.2005, 1.346, 1.3757, 1.3956, 1.2905, 1.3199, 1.3887, 1.4658, 1.4826,
-                1.4502, 1.8708, 1.5356, 1.4577, 1.7803, 1.6661, 1.7878, 1.3137, 1.3788, 1.3826,
-                1.4543, 1.6683, 1.6606, 1.5935, 1.7119, 1.7599, 1.0642, 1.1124, 0.9832, 1.0629,
-                0.9228, 1.0681, 0.9127, 1.0635, 1.0557, 0.1022, 0.2061, 0.3895, 0.8035, 0.7239,
-                0.7278, 0.7899, 0.6933, 0.2681, 0.393, 0.7109, 0.729, 0.7412, 0.8742, 0.7118,
-                0.3665, 0.8132, 0.7894, 0.8763, 0.8868, 0.7589, 0.7858, 0.714, 0.7966, 0.8288,
-                0.8542, 0.7095, 0.5959, 0.6213, 0.5612, 0.4604, 0.5065, 0.47, 0.3502, 0.3097,
-                0.2712
-            ]
-            .into_iter()
-            .collect()
-        );
+        assert_eq!(matrix, m_exp);
     }
 
     #[test]

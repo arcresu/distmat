@@ -33,6 +33,8 @@ pub struct Columns<'a, D> {
 
 pub struct Column<'a, D>(StepBy<slice::Iter<'a, D>>);
 
+pub struct Labels<'a>(pub(crate) Option<slice::Iter<'a, String>>);
+
 /// Build a matrix from the values in row major order.
 /// The length of the source iterator should be `n * n` for some `n: usize`.
 impl<D> FromIterator<D> for SquareMatrix<D> {
@@ -92,21 +94,28 @@ impl<D> SquareMatrix<D> {
         self.data
     }
 
-    /// An optional list of labels for the underlying elements.
+    /// Iterator over labels for the underlying elements.
+    ///
+    /// If no labels are configured for this matrix, the iterator will be empty.
+    /// See [Labels::has_labels()] and [set_labels()](DistMatrix::set_labels).
     #[inline]
-    pub fn labels(&self) -> Option<&[String]> {
-        self.labels.as_deref()
+    pub fn iter_labels(&self) -> Labels {
+        Labels(self.labels.as_ref().map(|labs| labs.iter()))
     }
 
-    /// Set or clear labels for the underlying elements.
+    /// Set labels for the underlying elements.
     ///
     /// Panics if the number of labels is not the same as `self.size()`.
     #[inline]
-    pub fn set_labels(&mut self, new_labels: Option<Vec<String>>) {
-        if let Some(ref labels) = new_labels {
-            assert_eq!(labels.len(), self.size);
-        }
-        self.labels = new_labels;
+    pub fn set_labels(&mut self, new_labels: Vec<String>) {
+        assert_eq!(new_labels.len(), self.size);
+        self.labels = Some(new_labels);
+    }
+
+    /// Remove all labels for the underlying elements.
+    #[inline]
+    pub fn clear_labels(&mut self) {
+        self.labels = None;
     }
 
     /// Convert distances using the provided function.
@@ -193,9 +202,11 @@ impl SquareMatrix<f32> {
 impl<D: Copy> SquareMatrix<D> {
     /// Retain only the lower triangle of the matrix.
     pub fn lower_triangle(&self) -> DistMatrix<D> {
-        Coordinates::new(self.size)
+        let mut m: DistMatrix<D> = Coordinates::new(self.size)
             .map(|(i, j)| self.data[index_for(self.size, i, j)])
-            .collect()
+            .collect();
+        m.labels = self.labels.clone();
+        m
     }
 
     /// Retrieve an element from the distance matrix.
@@ -371,6 +382,35 @@ impl<'a, D: Copy> Iterator for Column<'a, D> {
 
 impl<'a, D: Copy> ExactSizeIterator for Column<'a, D> {}
 
+impl<'a> Iterator for Labels<'a> {
+    type Item = &'a str;
+
+    #[inline]
+    fn next(&mut self) -> Option<&'a str> {
+        self.0
+            .as_mut()
+            .and_then(|inner| inner.next().map(String::as_str))
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        match self.0 {
+            Some(ref inner) => inner.size_hint(),
+            None => (0, Some(0)),
+        }
+    }
+}
+
+impl<'a> ExactSizeIterator for Labels<'a> {}
+
+impl<'a> Labels<'a> {
+    /// Does the matrix have labels?
+    #[inline]
+    pub fn has_labels(&self) -> bool {
+        self.0.is_some()
+    }
+}
+
 /// Gets the index of the data vector corresponding to the given row and column.
 pub(crate) const fn index_for(n: usize, i: usize, j: usize) -> usize {
     n * i + j
@@ -379,6 +419,10 @@ pub(crate) const fn index_for(n: usize, i: usize, j: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn mk_labels<I: IntoIterator<Item = &'static str>>(labs: I) -> Vec<String> {
+        labs.into_iter().map(|x| x.to_owned()).collect()
+    }
 
     #[test]
     fn test_from_pw_distances() {
@@ -430,21 +474,16 @@ mod tests {
             ("C", "B", 4),
             ("C", "C", 0),
         ];
-        let mut m = SquareMatrix::from_labelled_distances(dists.into_iter()).unwrap();
-        m.set_labels(None);
-        let m2 = SquareMatrix::<u32>::from_pw_distances(&[1_u32, 6, 2]);
+        let m = SquareMatrix::from_labelled_distances(dists.into_iter()).unwrap();
+        let mut m2 = SquareMatrix::<u32>::from_pw_distances(&[1_u32, 6, 2]);
+        m2.set_labels(mk_labels(["A", "B", "C"]));
         assert_eq!(m, m2);
     }
 
     #[test]
     fn test_getters() {
         let mut m = SquareMatrix::from_pw_distances_with(&[1_i32, 6, 2, 5], |x, y| x - y);
-        m.set_labels(Some(vec![
-            "A".to_owned(),
-            "B".to_owned(),
-            "C".to_owned(),
-            "D".to_owned(),
-        ]));
+        m.set_labels(mk_labels(["A", "B", "C", "D"]));
 
         assert_eq!(m.get(1, 2), Some(4));
         assert_eq!(m.get(2, 1), Some(-4));
@@ -568,13 +607,8 @@ mod tests {
             TabularShape::Wide,
         )
         .unwrap();
-        let labs = vec![
-            "seq1".to_owned(),
-            "seq2".to_owned(),
-            "seq3".to_owned(),
-            "seq4".to_owned(),
-        ];
-        assert_eq!(m.labels(), Some(&labs[..]));
+        let labels: Vec<&str> = m.iter_labels().collect();
+        assert_eq!(labels, vec!["seq1", "seq2", "seq3", "seq4"]);
         assert_eq!(m.size(), 4);
 
         let m = SquareMatrix::from_tabular_file(
@@ -583,13 +617,8 @@ mod tests {
             TabularShape::Wide,
         )
         .unwrap();
-        let labs = vec![
-            "seq1".to_owned(),
-            "seq2".to_owned(),
-            "seq3".to_owned(),
-            "seq4".to_owned(),
-        ];
-        assert_eq!(m.labels(), Some(&labs[..]));
+        let labels: Vec<&str> = m.iter_labels().collect();
+        assert_eq!(labels, vec!["seq1", "seq2", "seq3", "seq4"]);
         assert_eq!(m.size(), 4);
     }
 }
