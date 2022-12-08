@@ -66,12 +66,3 @@ Non-goals:
 Dual-licensed under [MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE).
 
 © Western Sydney Local Health District, NSW Health.
-
-
-## Changes
-
-### unreleased
-
-  * `DistMatrix` and `SquareMatrix` can optionally store a list of labels
-    corresponding to the underlying elements (e.g. taxa). There are new methods
-    to get values by label.
