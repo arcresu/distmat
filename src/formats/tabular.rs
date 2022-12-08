@@ -59,6 +59,10 @@ pub enum TabularShape {
     /// C,B,1
     /// C,C,0
     /// ```
+    ///
+    /// Note that [SquareMatrix::from_labelled_distances] and [DistMatrix::from_labelled_distances]
+    /// construct matrix types from an iterator of this shape if your data is not stored in
+    /// a tabular file.
     Long,
 }
 

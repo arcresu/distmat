@@ -1,5 +1,7 @@
 //! Read distance matrix data to different file formats.
 //!
+//! If you have a file produced by a tool for which none of the options here work,
+//! please report an issue describing how the file was made and an example of the format.
 //!
 //! ## PHYLIP
 //! Parse distance matrix in the PHYLIP format.

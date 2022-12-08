@@ -143,8 +143,6 @@ impl<D> DistMatrix<D> {
 impl DistMatrix<f32> {
     /// Parse a distance matrix from `reader` in PHYLIP lower triangle format.
     ///
-    /// Returns the list of taxon labels along with the distance matrix.
-    ///
     /// See [`formats`](crate::formats) for details.
     #[inline]
     pub fn from_phylip<R: Read>(
@@ -158,8 +156,6 @@ impl DistMatrix<f32> {
     ///
     /// The file can optionally be compressed with `gzip`.
     ///
-    /// Returns the list of taxon labels along with the distance matrix.
-    ///
     /// See [`formats`](crate::formats) for details.
     #[inline]
     pub fn from_phylip_file<P: AsRef<Path>>(
@@ -172,7 +168,6 @@ impl DistMatrix<f32> {
 
     /// Parse a distance matrix from `reader` in tabular lower triangle format.
     ///
-    /// Returns the list of taxon labels along with the distance matrix.
     /// Only the long shape is supported.
     ///
     /// See [`formats`](crate::formats) for details.
@@ -188,8 +183,6 @@ impl DistMatrix<f32> {
     ///
     /// The file can optionally be compressed with `gzip`.
     /// Only the long shape is supported.
-    ///
-    /// Returns the list of taxon labels along with the distance matrix.
     ///
     /// See [`formats`](crate::formats) for details.
     #[inline]

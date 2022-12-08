@@ -138,8 +138,6 @@ impl<D> SquareMatrix<D> {
 impl SquareMatrix<u32> {
     /// Parse a distance matrix from `reader` in a tabular format.
     ///
-    /// Returns the list of taxon labels along with the distance matrix.
-    ///
     /// See [`formats`](crate::formats) for details.
     #[inline]
     pub fn from_tabular<R: Read>(
@@ -153,8 +151,6 @@ impl SquareMatrix<u32> {
     /// Load a distance matrix from the file at `path` in a tabular format.
     ///
     /// The file can optionally be compressed with `gzip`.
-    ///
-    /// Returns the list of taxon labels along with the distance matrix.
     ///
     /// See [`formats`](crate::formats) for details.
     #[inline]
@@ -171,8 +167,6 @@ impl SquareMatrix<u32> {
 impl SquareMatrix<f32> {
     /// Parse a distance matrix from `reader` in PHYLIP square format.
     ///
-    /// Returns the list of taxon labels along with the distance matrix.
-    ///
     /// See [`formats`](crate::formats) for details.
     #[inline]
     pub fn from_phylip<R: Read>(
@@ -185,8 +179,6 @@ impl SquareMatrix<f32> {
     /// Load a distance matrix from the file at `path` in PHYLIP square format.
     ///
     /// The file can optionally be compressed with `gzip`.
-    ///
-    /// Returns the list of taxon labels along with the distance matrix.
     ///
     /// See [`formats`](crate::formats) for details.
     #[inline]

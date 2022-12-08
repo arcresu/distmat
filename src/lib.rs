@@ -6,11 +6,17 @@
 //!   * [`SquareMatrix`] stores the full matrix and is more efficient to access.
 //!
 //! Both matrix types have their data stored in a single `Vec<D>`, and are generic
-//! over `D`. They provide various iterators and accessors to retrieve elements
+//! over `D`. They provide various iterators and accessors to retrieve elements.
+//! They can optionally store labels (e.g. taxon labels from bioinformatic distance matrix formats).
 //!
-//! Create from pairwise distances using `from_pw_distances` or `from_pw_distances_with`.
+//! There are different ways to load your data into matrix types:
 //!
-//! File formats (see [`formats`]): tabular (e.g. `snp-dists`) and PHYLIP.
+//!   * using a pairwise distance measure: `from_pw_distances` or `from_pw_distances_with`,
+//!   * from an iterator over pairs of labels and distances with `from_labelled_distances`,
+//!   * from a vector stored in the correct order with `collect`,
+//!   * from a file (see [`formats`]): tabular (e.g. `snp-dists`) or PHYLIP,
+//!   * `let square: SquareMatrix<D> = dist.into();` where `dist: DistMatrix<D>`,
+//!   * `let dist: DistMatrix<D> = square.lower_triangle();` where `square: SquareMatrix<D>`.
 
 use flate2::read::GzDecoder;
 use std::fs::File;
