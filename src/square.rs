@@ -88,10 +88,10 @@ impl<D> SquareMatrix<D> {
         }
     }
 
-    /// Return the stored distance data in row-major order.
+    /// Return the stored distance data in row-major order and any labels.
     #[inline]
-    pub fn into_inner(self) -> Vec<D> {
-        self.data
+    pub fn into_inner(self) -> (Option<Vec<String>>, Vec<D>) {
+        (self.labels, self.data)
     }
 
     /// Iterator over labels for the underlying elements.

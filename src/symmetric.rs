@@ -91,12 +91,12 @@ impl<D> DistMatrix<D> {
             .collect()
     }
 
-    /// Return the stored distance data.
+    /// Return the stored distance data and any labels.
     ///
     /// The order is compatible with R's `dist` objects.
     #[inline]
-    pub fn into_inner(self) -> Vec<D> {
-        self.data
+    pub fn into_inner(self) -> (Option<Vec<String>>, Vec<D>) {
+        (self.labels, self.data)
     }
 
     /// Iterator over labels for the underlying elements.
