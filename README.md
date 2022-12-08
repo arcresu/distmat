@@ -65,6 +65,8 @@ Non-goals:
 
 Dual-licensed under [MIT](LICENSE-MIT) or [Apache 2.0](LICENSE-APACHE).
 
+© Western Sydney Local Health District, NSW Health.
+
 
 ## Changes
 
