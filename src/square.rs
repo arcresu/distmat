@@ -35,6 +35,9 @@ pub struct Column<'a, D>(StepBy<slice::Iter<'a, D>>);
 
 pub struct Labels<'a>(pub(crate) Option<slice::Iter<'a, String>>);
 
+pub type Iter<'a, D> = std::slice::Iter<'a, D>;
+pub type IterMut<'a, D> = std::slice::IterMut<'a, D>;
+
 /// Build a matrix from the values in row major order.
 /// The length of the source iterator should be `n * n` for some `n: usize`.
 impl<D> FromIterator<D> for SquareMatrix<D> {
@@ -92,6 +95,16 @@ impl<D> SquareMatrix<D> {
     #[inline]
     pub fn into_inner(self) -> (Option<Vec<String>>, Vec<D>) {
         (self.labels, self.data)
+    }
+
+    /// Iterate by reference over all values in the matrix in row-major order.
+    pub fn iter(&self) -> Iter<D> {
+        self.data.iter()
+    }
+
+    /// Iterate by mutable reference over all values in the matrix in row-major order.
+    pub fn iter_mut(&mut self) -> IterMut<D> {
+        self.data.iter_mut()
     }
 
     /// Iterator over labels for the underlying elements.

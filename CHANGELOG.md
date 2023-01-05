@@ -1,5 +1,10 @@
 # Changelog
 
+## distmat 0.4.0
+
+  * The matrix types gained by-reference iterators over the underlying data
+    vectors (`iter()` and `iter_mut()`).
+
 ## distmat 0.3.0
 
   * `DistMatrix` and `SquareMatrix` can optionally store a list of labels

@@ -41,6 +41,9 @@ pub struct Coordinates {
     n_m1: usize,
 }
 
+pub type Iter<'a, D> = std::slice::Iter<'a, D>;
+pub type IterMut<'a, D> = std::slice::IterMut<'a, D>;
+
 /// Build a matrix from the values.
 /// The length of the source iterator should be `n * (n - 1) / 2` for some `n: usize`.
 ///
@@ -97,6 +100,28 @@ impl<D> DistMatrix<D> {
     #[inline]
     pub fn into_inner(self) -> (Option<Vec<String>>, Vec<D>) {
         (self.labels, self.data)
+    }
+
+    /// Iterate by reference over all values in the matrix.
+    ///
+    /// The order corresponds to that of `iter_coords`.
+    pub fn iter(&self) -> Iter<D> {
+        self.data.iter()
+    }
+
+    /// Iterate by mutable reference over all values in the matrix.
+    ///
+    /// The order corresponds to that of `iter_coords`.
+    pub fn iter_mut(&mut self) -> IterMut<D> {
+        self.data.iter_mut()
+    }
+
+    /// Iterate over coordinates as `(row, column)`.
+    ///
+    /// This does not include the diagonal or upper triangle entries.
+    #[inline]
+    pub fn iter_coords(&self) -> Coordinates {
+        Coordinates::new(self.size)
     }
 
     /// Iterator over labels for the underlying elements.
@@ -211,14 +236,6 @@ impl<D: Copy> DistMatrix<D> {
     #[inline]
     pub fn iter_cols(&self) -> Rows<D> {
         self.iter_rows()
-    }
-
-    /// Iterate over coordinates as `(row, column)`.
-    ///
-    /// This does not include the diagonal or upper triangle entries.
-    #[inline]
-    pub fn iter_coords(&self) -> Coordinates {
-        Coordinates::new(self.size)
     }
 
     /// Retrieve an element from the lower triangle of the distance matrix.
