@@ -54,15 +54,30 @@ pub struct Coordinates {
 pub type Iter<'a, D> = std::slice::Iter<'a, D>;
 pub type IterMut<'a, D> = std::slice::IterMut<'a, D>;
 
-/// Build a matrix from the values.
-/// The length of the source iterator should be `n * (n - 1) / 2` for some `n: usize`.
+/// Build a matrix from its values.
 ///
-/// In R's `dist` objects, this [is interpreted](https://rdrr.io/r/stats/dist.html) as the lower
-/// triangle of the distance matrix stored in column major order. The diagonal is omitted and is
-/// assumed to be zero.
+/// The length of the source iterator should be `n * (n - 1) / 2` for some `n: usize`.
+/// The diagonal and upper triangle are omitted, and the remaining lower triangle should be
+/// provided in column major order.
+///
+/// Panics if the iterator contains the wrong number of entries.
 impl<D> FromIterator<D> for DistMatrix<D> {
+    #[inline]
     fn from_iter<I: IntoIterator<Item = D>>(iter: I) -> Self {
         let data: Vec<D> = iter.into_iter().collect();
+        data.into()
+    }
+}
+
+/// Build a matrix from its values.
+///
+/// The length of the source vector should be `n * (n - 1) / 2` for some `n: usize`.
+/// The diagonal and upper triangle are omitted, and the remaining lower triangle should be
+/// provided in column major order.
+///
+/// Panics if the vector contains the wrong number of entries.
+impl<D> From<Vec<D>> for DistMatrix<D> {
+    fn from(data: Vec<D>) -> Self {
         let size = n_items(data.len());
         assert_eq!(n_entries(size), data.len());
         DistMatrix {

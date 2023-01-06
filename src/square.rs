@@ -49,11 +49,27 @@ pub struct Labels<'a>(pub(crate) Option<slice::Iter<'a, String>>);
 pub type Iter<'a, D> = std::slice::Iter<'a, D>;
 pub type IterMut<'a, D> = std::slice::IterMut<'a, D>;
 
-/// Build a matrix from the values in row major order.
+/// Build a matrix from its values.
+///
 /// The length of the source iterator should be `n * n` for some `n: usize`.
+/// The values should be in row major order.
+///
+/// Panics if the iterator contains the wrong number of entries.
 impl<D> FromIterator<D> for SquareMatrix<D> {
     fn from_iter<I: IntoIterator<Item = D>>(iter: I) -> Self {
         let data: Vec<D> = iter.into_iter().collect();
+        data.into()
+    }
+}
+
+/// Build a matrix from its values.
+///
+/// The length of the source vector should be `n * n` for some `n: usize`.
+/// The values should be in row major order.
+///
+/// Panics if the vector contains the wrong number of entries.
+impl<D> From<Vec<D>> for SquareMatrix<D> {
+    fn from(data: Vec<D>) -> Self {
         let size = (data.len() as f64).sqrt() as usize;
         assert_eq!(size * size, data.len());
         SquareMatrix {
