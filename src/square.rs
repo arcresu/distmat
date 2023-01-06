@@ -10,7 +10,7 @@ use crate::builder::{DataError, DistBuilder};
 use crate::formats::{
     parse_phylip, parse_tabular, PhylipDialect, PhylipError, Separator, TabularError, TabularShape,
 };
-use crate::symmetric::Coordinates;
+use crate::symmetric::{n_entries, Coordinates};
 use crate::{open_file, AbsDiff, DistMatrix};
 
 /// Stores a full distance matrix in row-major order.
@@ -70,13 +70,16 @@ impl<D> SquareMatrix<D> {
     ///
     /// See [`from_pw_distances_with`](SquareMatrix::from_pw_distances_with) for a version that
     /// allows for an arbitrary distance measure.
-    pub fn from_pw_distances<T: Copy + Sub<T, Output = D> + AbsDiff>(points: &[T]) -> Self {
+    pub fn from_pw_distances<'a, T>(points: &'a [T]) -> Self
+    where
+        &'a T: Sub<&'a T, Output = D> + AbsDiff<&'a T>,
+    {
         let size = points.len();
         (0..size)
             .flat_map(|i| {
                 (0..size).map(move |j| {
-                    let t1 = points[i];
-                    let t2 = points[j];
+                    let t1 = &points[i];
+                    let t2 = &points[j];
                     t1.abs_diff(t2)
                 })
             })
@@ -100,6 +103,46 @@ impl<D> SquareMatrix<D> {
             size,
             labels: None,
         }
+    }
+
+    /// Build a matrix from an iterator of labelled distances.
+    ///
+    /// The iterator can be in any order so long as by the end of iteration there are exactly the
+    /// correct entries. An error will be returned if any entry is duplicated, or if there are the
+    /// wrong number of entries.
+    pub fn from_labelled_distances<S, I>(iter: I) -> Result<SquareMatrix<D>, DataError>
+    where
+        S: AsRef<str>,
+        I: IntoIterator<Item = (S, S, D)>,
+    {
+        let builder: DistBuilder<D> = std::iter::FromIterator::from_iter(iter);
+        builder.try_into()
+    }
+
+    /// Retrieve an element from the distance matrix.
+    ///
+    /// Returns `None` if either `row` or `col` are out of range.
+    #[inline]
+    pub fn get(&self, row: usize, col: usize) -> Option<&D> {
+        (row <= self.size && col <= self.size).then(|| &self.data[index_for(self.size, row, col)])
+    }
+
+    #[inline]
+    fn label_to_index<S: AsRef<str>>(&self, label: S) -> Option<usize> {
+        self.labels
+            .as_ref()?
+            .into_iter()
+            .position(|l| l == label.as_ref())
+    }
+
+    /// Retrieve an element from the distance matrix.
+    ///
+    /// Equivalent to [`get`](SquareMatrix::get) after converting the labels to indices, except that
+    /// `None` will additionally be returned if either `row` or `col` are not known labels.
+    pub fn get_by_name<S: AsRef<str>>(&self, row: S, col: S) -> Option<&D> {
+        let row = self.label_to_index(row)?;
+        let col = self.label_to_index(col)?;
+        self.get(row, col)
     }
 
     /// Decompose into the stored labels and data.
@@ -156,6 +199,24 @@ impl<D> SquareMatrix<D> {
     #[inline]
     pub fn size(&self) -> usize {
         self.size
+    }
+
+    /// Retain only the lower triangle of the matrix.
+    ///
+    /// See also [`lower_triangle`](SquareMatrix::lower_triangle).
+    pub fn into_lower_triangle(self) -> DistMatrix<D>
+    where
+        D: std::fmt::Debug,
+    {
+        let mut data = self.data;
+        let size = self.size;
+        let labels = self.labels;
+        for (idx_dest, (i, j)) in Coordinates::new(self.size).enumerate() {
+            let idx_src = index_for(size, j, i);
+            data.swap(idx_src, idx_dest);
+        }
+        data.truncate(n_entries(size));
+        DistMatrix { data, size, labels }
     }
 }
 
@@ -217,36 +278,14 @@ impl SquareMatrix<f32> {
 
 impl<D: Copy> SquareMatrix<D> {
     /// Retain only the lower triangle of the matrix.
+    ///
+    /// See also [`into_lower_triangle`](SquareMatrix::into_lower_triangle).
     pub fn lower_triangle(&self) -> DistMatrix<D> {
         let mut m: DistMatrix<D> = Coordinates::new(self.size)
             .map(|(i, j)| self.data[index_for(self.size, j, i)])
             .collect();
         m.labels = self.labels.clone();
         m
-    }
-
-    /// Retrieve an element from the distance matrix.
-    ///
-    /// Returns `None` if either `row` or `col` are out of range.
-    #[inline]
-    pub fn get(&self, row: usize, col: usize) -> Option<D> {
-        (row <= self.size && col <= self.size).then(|| self.data[index_for(self.size, row, col)])
-    }
-
-    /// Retrieve an element from the distance matrix.
-    ///
-    /// Returns `None` if either `row` or `col` are not known labels, including
-    /// if the matrix has no labels.
-    pub fn get_by_name<S: AsRef<str>>(&self, row: S, col: S) -> Option<D> {
-        let row: usize = self
-            .labels
-            .as_ref()
-            .and_then(|labs| labs.iter().position(|l| l == row.as_ref()))?;
-        let col: usize = self
-            .labels
-            .as_ref()
-            .and_then(|labs| labs.iter().position(|l| l == col.as_ref()))?;
-        self.get(row, col)
     }
 
     /// Iterator over pairwise distances from the specified point to all points in order, including
@@ -278,20 +317,6 @@ impl<D: Copy> SquareMatrix<D> {
             matrix: self,
             column: 0..self.size,
         }
-    }
-
-    /// Build a matrix from an iterator of labelled distances.
-    ///
-    /// The iterator can be in any order so long as by the end of iteration there are exactly the
-    /// correct entries. An error will be returned if any entry is duplicated, or if there are the
-    /// wrong number of entries.
-    pub fn from_labelled_distances<S, I>(iter: I) -> Result<SquareMatrix<D>, DataError>
-    where
-        S: AsRef<str>,
-        I: IntoIterator<Item = (S, S, D)>,
-    {
-        let builder: DistBuilder<D> = std::iter::FromIterator::from_iter(iter);
-        builder.try_into()
     }
 }
 
@@ -501,10 +526,10 @@ mod tests {
         let mut m = SquareMatrix::from_pw_distances_with(&[1_i32, 6, 2, 5], |x, y| x - y);
         m.set_labels(mk_labels(["A", "B", "C", "D"]));
 
-        assert_eq!(m.get(1, 2), Some(4));
-        assert_eq!(m.get(2, 1), Some(-4));
-        assert_eq!(m.get_by_name("B", "C"), Some(4));
-        assert_eq!(m.get_by_name("C", "B"), Some(-4));
+        assert_eq!(m.get(1, 2), Some(&4));
+        assert_eq!(m.get(2, 1), Some(&-4));
+        assert_eq!(m.get_by_name("B", "C"), Some(&4));
+        assert_eq!(m.get_by_name("C", "B"), Some(&-4));
     }
 
     #[test]
@@ -617,6 +642,22 @@ mod tests {
             4, 7, 9, 10, 0,
         ].into_iter().collect();
         let m1: DistMatrix<u32> = m.lower_triangle();
+        let m2: DistMatrix<u32> = (1..=10).collect();
+
+        assert_eq!(m1, m2);
+    }
+
+    #[test]
+    fn test_to_sym_inplace() {
+        #[rustfmt::skip]
+        let m: SquareMatrix<u32> = [
+            0, 0, 0,  0, 0,
+            1, 0, 0,  0, 0,
+            2, 5, 0,  0, 0,
+            3, 6, 8,  0, 0,
+            4, 7, 9, 10, 0,
+        ].into_iter().collect();
+        let m1: DistMatrix<u32> = m.into_lower_triangle();
         let m2: DistMatrix<u32> = (1..=10).collect();
 
         assert_eq!(m1, m2);

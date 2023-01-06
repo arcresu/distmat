@@ -18,12 +18,11 @@ use crate::{open_file, AbsDiff};
 /// memory efficient at the expense of a less straightforward mapping between matrix coordinates
 /// and storage index.
 ///
-/// Elements of the matrix can be accessed either using the precise coordinates of the lower
-/// triangle using [`get`](DistMatrix::get), or using the symmetric version
-/// [`get_symmetric`](DistMatrix::get_symmetric). In the latter case, coordinates in the upper
-/// triangle are reflected, and coordinates on the diagonal return `D::default()`.
+/// Elements of the matrix can be accessed either using coordinates in the lower
+/// triangle with [`get`](DistMatrix::get), or any non-diagonal coordinate with
+/// [`get_symmetric`](DistMatrix::get_symmetric).
 ///
-/// The rowwise iterators are available when `D: Copy` as they yield copies of values.
+/// The rowwise iterators are available when `D: Copy + Default` as they yield copies of values.
 #[derive(PartialEq, Eq, Clone)]
 #[cfg_attr(test, derive(Debug))]
 pub struct DistMatrix<D> {
@@ -80,14 +79,14 @@ impl<D> DistMatrix<D> {
     ///
     /// See [`from_pw_distances_with`](DistMatrix::from_pw_distances_with) for a version that
     /// allows for an arbitrary distance measure.
-    pub fn from_pw_distances<T>(points: &[T]) -> Self
+    pub fn from_pw_distances<'a, T>(points: &'a [T]) -> Self
     where
-        T: Copy + Sub<T, Output = D> + AbsDiff<T>,
+        &'a T: Sub<&'a T, Output = D> + AbsDiff<&'a T>,
     {
         Coordinates::new(points.len())
             .map(|(i, j)| {
-                let t1 = points[i];
-                let t2 = points[j];
+                let t1 = &points[i];
+                let t2 = &points[j];
                 t1.abs_diff(t2)
             })
             .collect()
@@ -103,6 +102,84 @@ impl<D> DistMatrix<D> {
                 dist_fn(t1, t2)
             })
             .collect()
+    }
+
+    /// Build a matrix from an iterator of labelled distances.
+    ///
+    /// The iterator can be in any order so long as by the end of iteration there are exactly the
+    /// correct entries. An error will be returned if any entry is duplicated, or if there are the
+    /// wrong number of entries.
+    pub fn from_labelled_distances<S, I>(iter: I) -> Result<DistMatrix<D>, DataError>
+    where
+        S: AsRef<str>,
+        I: IntoIterator<Item = (S, S, D)>,
+    {
+        let builder: DistBuilder<D> = std::iter::FromIterator::from_iter(iter);
+        builder.try_into()
+    }
+
+    /// Retrieve an element by reference from the lower triangle of the distance matrix.
+    ///
+    /// Returns a value if `row < col < n` where `n` is the number of rows in the distance matrix,
+    /// otherwise returns `None`.
+    #[inline]
+    pub fn get(&self, row: usize, col: usize) -> Option<&D> {
+        if row >= self.size || col >= self.size || row >= col {
+            return None;
+        }
+        Some(&self.data[index_for(self.size, row, col)])
+    }
+
+    /// Retrieve an element by mutable reference from the lower triangle of the distance matrix.
+    ///
+    /// Returns a value if `row < col < n` where `n` is the number of rows in the distance matrix,
+    /// otherwise returns `None`.
+    #[inline]
+    pub fn get_mut(&mut self, row: usize, col: usize) -> Option<&mut D> {
+        if row >= self.size || col >= self.size || row >= col {
+            return None;
+        }
+        Some(&mut self.data[index_for(self.size, row, col)])
+    }
+
+    /// Retrieve an element by reference from the distance matrix.
+    ///
+    /// If either of the indices exceeds the size of the distance matrix or `row == col`, then
+    /// `None` is returned.
+    pub fn get_symmetric(&self, row: usize, col: usize) -> Option<&D> {
+        if row >= self.size || col >= self.size {
+            return None;
+        }
+        Some(&self.data[index_for(self.size, row.min(col), row.max(col))])
+    }
+
+    #[inline]
+    fn label_to_index<S: AsRef<str>>(&self, label: S) -> Option<usize> {
+        self.labels
+            .as_ref()?
+            .into_iter()
+            .position(|l| l == label.as_ref())
+    }
+
+    /// Retrieve an element by reference from the lower triangle of the distance matrix.
+    ///
+    /// Equivalent to [`get`](DistMatrix::get) after converting the labels to indices, except that
+    /// `None` will additionally be returned if either `row` or `col` are not known labels.
+    pub fn get_by_name<S: AsRef<str>>(&self, row: S, col: S) -> Option<&D> {
+        let row = self.label_to_index(row)?;
+        let col = self.label_to_index(col)?;
+        self.get(row, col)
+    }
+
+    /// Retrieve an element by reference from the distance matrix.
+    ///
+    /// Equivalent to [`get_symmetric`](DistMatrix::get_symmetric) after converting the labels to
+    /// indices, except that `None` will additionally be returned if either `row` or `col` are not
+    /// known labels.
+    pub fn get_symmetric_by_name<S: AsRef<str>>(&self, row: S, col: S) -> Option<&D> {
+        let row = self.label_to_index(row)?;
+        let col = self.label_to_index(col)?;
+        self.get_symmetric(row, col)
     }
 
     /// Decompose into the stored labels and data.
@@ -232,51 +309,6 @@ impl DistMatrix<f32> {
 }
 
 impl<D: Copy> DistMatrix<D> {
-    /// Iterate over rows of the distance matrix.
-    #[inline]
-    pub fn iter_rows(&self) -> Rows<D> {
-        Rows {
-            matrix: self,
-            row: 0..self.size,
-        }
-    }
-
-    /// Iterate over columns of the distance matrix.
-    ///
-    /// Since this is a symmetric matrix, this is the same as [`iter_rows`](DistMatrix::iter_rows).
-    #[inline]
-    pub fn iter_cols(&self) -> Rows<D> {
-        self.iter_rows()
-    }
-
-    /// Retrieve an element from the lower triangle of the distance matrix.
-    ///
-    /// Returns a value if `row < col < n` where `n` is the number of rows in the distance matrix,
-    /// otherwise returns `None`.
-    #[inline]
-    pub fn get(&self, row: usize, col: usize) -> Option<D> {
-        if row >= self.size || col >= self.size || row >= col {
-            return None;
-        }
-        Some(self.data[index_for(self.size, row, col)])
-    }
-
-    /// Retrieve an element from the lower triangle of the distance matrix.
-    ///
-    /// Returns `None` if either `row` or `col` are not known labels, including
-    /// if the matrix has no labels.
-    pub fn get_by_name<S: AsRef<str>>(&self, row: S, col: S) -> Option<D> {
-        let row: usize = self
-            .labels
-            .as_ref()
-            .and_then(|labs| labs.iter().position(|l| l == row.as_ref()))?;
-        let col: usize = self
-            .labels
-            .as_ref()
-            .and_then(|labs| labs.iter().position(|l| l == col.as_ref()))?;
-        self.get(row, col)
-    }
-
     /// Copy a subset of the distance matrix corresponding to the specified row/column positions.
     ///
     /// Panics if any of the positions are out of range.
@@ -315,51 +347,24 @@ impl<D: Copy> DistMatrix<D> {
 
         DistMatrix { data, size, labels }
     }
-
-    /// Build a matrix from an iterator of labelled distances.
-    ///
-    /// The iterator can be in any order so long as by the end of iteration there are exactly the
-    /// correct entries. An error will be returned if any entry is duplicated, or if there are the
-    /// wrong number of entries.
-    pub fn from_labelled_distances<S, I>(iter: I) -> Result<DistMatrix<D>, DataError>
-    where
-        S: AsRef<str>,
-        I: IntoIterator<Item = (S, S, D)>,
-    {
-        let builder: DistBuilder<D> = std::iter::FromIterator::from_iter(iter);
-        builder.try_into()
-    }
 }
 
 impl<D: Copy + Default> DistMatrix<D> {
-    /// Retrieve an element from the distance matrix.
-    ///
-    /// If `row == col` this returns `D::default()`. If either of the indices exceeds the size of
-    /// the distance matrix then `None` is returned.
-    pub fn get_symmetric(&self, row: usize, col: usize) -> Option<D> {
-        if row >= self.size || col >= self.size {
-            return None;
+    /// Iterate over rows of the distance matrix.
+    #[inline]
+    pub fn iter_rows(&self) -> Rows<D> {
+        Rows {
+            matrix: self,
+            row: 0..self.size,
         }
-        if row == col {
-            return Some(D::default());
-        }
-        Some(self.data[index_for(self.size, row.min(col), row.max(col))])
     }
 
-    /// Retrieve an element from the distance matrix.
+    /// Iterate over columns of the distance matrix.
     ///
-    /// Returns `None` if either `row` or `col` are not known labels, including
-    /// if the matrix has no labels.
-    pub fn get_symmetric_by_name<S: AsRef<str>>(&self, row: S, col: S) -> Option<D> {
-        let row: usize = self
-            .labels
-            .as_ref()
-            .and_then(|labs| labs.iter().position(|l| l == row.as_ref()))?;
-        let col: usize = self
-            .labels
-            .as_ref()
-            .and_then(|labs| labs.iter().position(|l| l == col.as_ref()))?;
-        self.get_symmetric(row, col)
+    /// Since this is a symmetric matrix, this is the same as [`iter_rows`](DistMatrix::iter_rows).
+    #[inline]
+    pub fn iter_cols(&self) -> Rows<D> {
+        self.iter_rows()
     }
 
     /// Iterator over pairwise distances from the specified point to all points in order, including
@@ -564,7 +569,7 @@ fn n_items(dist_length: usize) -> usize {
     (((8 * dist_length + 1) as f64).sqrt() as usize + 1) / 2
 }
 
-const fn n_entries(n: usize) -> usize {
+pub(crate) const fn n_entries(n: usize) -> usize {
     n * n.saturating_sub(1) / 2
 }
 
@@ -684,18 +689,18 @@ mod tests {
     #[test]
     fn test_getters() {
         let m: DistMatrix<u32> = [1, 2, 3, 4, 1, 2, 3, 1, 2, 1].into_iter().collect();
-        assert_eq!(m.get(0, 3), Some(3));
+        assert_eq!(m.get(0, 3), Some(&3));
         assert_eq!(m.get(3, 0), None);
-        assert_eq!(m.get_symmetric(3, 0), Some(3));
+        assert_eq!(m.get_symmetric(3, 0), Some(&3));
     }
 
     #[test]
     fn test_getters_by_name() {
         let mut m: DistMatrix<u32> = [1, 2, 3, 4, 1, 2, 3, 1, 2, 1].into_iter().collect();
         m.set_labels(mk_labels(["A", "B", "C", "D", "E"]));
-        assert_eq!(m.get_by_name("A", "D"), Some(3));
+        assert_eq!(m.get_by_name("A", "D"), Some(&3));
         assert_eq!(m.get_by_name("D", "A"), None);
-        assert_eq!(m.get_symmetric_by_name("D", "A"), Some(3));
+        assert_eq!(m.get_symmetric_by_name("D", "A"), Some(&3));
     }
 
     #[test]

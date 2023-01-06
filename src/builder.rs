@@ -25,7 +25,7 @@ pub(crate) struct DistBuilder<D> {
     label_to_id: BTreeMap<String, u32>,
 }
 
-impl<D: Copy> DistBuilder<D> {
+impl<D> DistBuilder<D> {
     pub fn new() -> Self {
         DistBuilder {
             labels: Vec::new(),
@@ -72,15 +72,15 @@ impl<D: Copy> DistBuilder<D> {
     }
 }
 
-impl<D: Copy> TryFrom<DistBuilder<D>> for SquareMatrix<D> {
+impl<D> TryFrom<DistBuilder<D>> for SquareMatrix<D> {
     type Error = DataError;
 
-    fn try_from(builder: DistBuilder<D>) -> Result<SquareMatrix<D>, DataError> {
+    fn try_from(mut builder: DistBuilder<D>) -> Result<SquareMatrix<D>, DataError> {
         let size = builder.labels.len();
         let mut data = Vec::with_capacity(size * size);
         for i in 0..size {
             for j in 0..size {
-                let dist: D = *builder.dists.get(&(i as u32, j as u32)).ok_or_else(|| {
+                let dist: D = builder.dists.remove(&(i as u32, j as u32)).ok_or_else(|| {
                     DataError::Missing(builder.labels[i].clone(), builder.labels[j].clone())
                 })?;
                 data.push(dist);
@@ -91,15 +91,15 @@ impl<D: Copy> TryFrom<DistBuilder<D>> for SquareMatrix<D> {
     }
 }
 
-impl<D: Copy> TryFrom<DistBuilder<D>> for DistMatrix<D> {
+impl<D> TryFrom<DistBuilder<D>> for DistMatrix<D> {
     type Error = DataError;
 
-    fn try_from(builder: DistBuilder<D>) -> Result<DistMatrix<D>, DataError> {
+    fn try_from(mut builder: DistBuilder<D>) -> Result<DistMatrix<D>, DataError> {
         let size = builder.labels.len();
         let mut data = Vec::with_capacity(size * (size - 1) / 2);
         for (i, j) in Coordinates::new(size) {
-            let dist1 = builder.dists.get(&(i as u32, j as u32));
-            let dist2 = builder.dists.get(&(j as u32, i as u32));
+            let dist1 = builder.dists.remove(&(i as u32, j as u32));
+            let dist2 = builder.dists.remove(&(j as u32, i as u32));
 
             if dist1.is_some() && dist2.is_some() {
                 return Err(DataError::Duplicate(
@@ -108,7 +108,7 @@ impl<D: Copy> TryFrom<DistBuilder<D>> for DistMatrix<D> {
                 ));
             }
 
-            let dist: D = *dist1.or(dist2).ok_or_else(|| {
+            let dist: D = dist1.or(dist2).ok_or_else(|| {
                 DataError::Missing(builder.labels[i].clone(), builder.labels[j].clone())
             })?;
             data.push(dist);
@@ -118,7 +118,7 @@ impl<D: Copy> TryFrom<DistBuilder<D>> for DistMatrix<D> {
     }
 }
 
-impl<S, D: Copy> FromIterator<(S, S, D)> for DistBuilder<D>
+impl<S, D> FromIterator<(S, S, D)> for DistBuilder<D>
 where
     S: AsRef<str>,
 {
