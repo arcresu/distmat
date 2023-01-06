@@ -221,7 +221,7 @@ mod tests {
     fn test_lower_triangle() {
         let f = include_bytes!("../../tests/phylip/lower.dist");
         let matrix = parse_lt(f.as_slice(), PhylipDialect::Relaxed).unwrap();
-        assert_eq!(matrix, expected_matrix().lower_triangle());
+        assert_eq!(matrix, expected_matrix().lower_triangle().copied());
     }
 
     #[test]

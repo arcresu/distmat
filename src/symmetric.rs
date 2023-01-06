@@ -323,6 +323,18 @@ impl DistMatrix<f32> {
     }
 }
 
+impl<D: Copy> DistMatrix<&D> {
+    /// Maps a `DistMatrix<&D>` to a `DistMatrix<D>` by copying values.
+    #[inline]
+    pub fn copied(self) -> DistMatrix<D> {
+        DistMatrix {
+            data: self.data.into_iter().copied().collect(),
+            size: self.size,
+            labels: self.labels,
+        }
+    }
+}
+
 impl<D: Copy> DistMatrix<D> {
     /// Copy a subset of the distance matrix corresponding to the specified row/column positions.
     ///

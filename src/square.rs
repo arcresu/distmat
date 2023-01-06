@@ -217,13 +217,21 @@ impl<D> SquareMatrix<D> {
         self.size
     }
 
-    /// Retain only the lower triangle of the matrix.
+    /// Create a new matrix by reference that uses only the lower triangle of this matrix.
+    ///
+    /// See also [`into_lower_triangle`](SquareMatrix::into_lower_triangle).
+    pub fn lower_triangle(&self) -> DistMatrix<&D> {
+        let mut m: DistMatrix<&D> = Coordinates::new(self.size)
+            .map(|(i, j)| &self.data[index_for(self.size, j, i)])
+            .collect();
+        m.labels = self.labels.clone();
+        m
+    }
+
+    /// Consume this matrix to create a new matrix that uses only the lower triangle.
     ///
     /// See also [`lower_triangle`](SquareMatrix::lower_triangle).
-    pub fn into_lower_triangle(self) -> DistMatrix<D>
-    where
-        D: std::fmt::Debug,
-    {
+    pub fn into_lower_triangle(self) -> DistMatrix<D> {
         let mut data = self.data;
         let size = self.size;
         let labels = self.labels;
@@ -292,18 +300,19 @@ impl SquareMatrix<f32> {
     }
 }
 
-impl<D: Copy> SquareMatrix<D> {
-    /// Retain only the lower triangle of the matrix.
-    ///
-    /// See also [`into_lower_triangle`](SquareMatrix::into_lower_triangle).
-    pub fn lower_triangle(&self) -> DistMatrix<D> {
-        let mut m: DistMatrix<D> = Coordinates::new(self.size)
-            .map(|(i, j)| self.data[index_for(self.size, j, i)])
-            .collect();
-        m.labels = self.labels.clone();
-        m
+impl<D: Copy> SquareMatrix<&D> {
+    /// Maps a `SquareMatrix<&D>` to a `SquareMatrix<D>` by copying values.
+    #[inline]
+    pub fn copied(self) -> SquareMatrix<D> {
+        SquareMatrix {
+            data: self.data.into_iter().copied().collect(),
+            size: self.size,
+            labels: self.labels,
+        }
     }
+}
 
+impl<D: Copy> SquareMatrix<D> {
     /// Iterator over pairwise distances from the specified point to all points in order, including
     /// itself.
     #[inline]
@@ -657,7 +666,7 @@ mod tests {
             3, 6, 8,  0, 0,
             4, 7, 9, 10, 0,
         ].into_iter().collect();
-        let m1: DistMatrix<u32> = m.lower_triangle();
+        let m1: DistMatrix<u32> = m.lower_triangle().copied();
         let m2: DistMatrix<u32> = (1..=10).collect();
 
         assert_eq!(m1, m2);
