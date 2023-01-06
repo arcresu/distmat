@@ -711,14 +711,6 @@ mod tests {
 
     #[test]
     fn readme() {
-        // A symmetric matrix stored as the lower triangle:
-        //   _1__5__3
-        // 1|
-        // 5| 4
-        // 3| 2  2
-        let matrix1 = DistMatrix::from_pw_distances(&[1, 5, 3]);
-        assert_eq!(matrix1.get_symmetric(1, 2), Some(&2));
-
         // A square matrix stored in row major order:
         //   _1___5___3
         // 1| 0  -4  -2

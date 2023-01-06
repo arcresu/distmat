@@ -19,10 +19,11 @@ use crate::{open_file, AbsDiff};
 /// and storage index.
 ///
 /// Elements of the matrix can be accessed either using coordinates in the lower
-/// triangle with [`get`](DistMatrix::get), or any non-diagonal coordinate with
+/// triangle with [`get`](DistMatrix::get), or any coordinate with
 /// [`get_symmetric`](DistMatrix::get_symmetric).
 ///
-/// The rowwise iterators are available when `D: Copy + Default` as they yield copies of values.
+/// The rowwise iterators and symmetric accessors are currently only available when
+/// `D: Copy + Default`.
 #[derive(PartialEq, Eq, Clone)]
 #[cfg_attr(test, derive(Debug))]
 pub struct DistMatrix<D> {
@@ -157,17 +158,6 @@ impl<D> DistMatrix<D> {
         Some(&mut self.data[index_for(self.size, row, col)])
     }
 
-    /// Retrieve an element by reference from the distance matrix.
-    ///
-    /// If either of the indices exceeds the size of the distance matrix or `row == col`, then
-    /// `None` is returned.
-    pub fn get_symmetric(&self, row: usize, col: usize) -> Option<&D> {
-        if row >= self.size || col >= self.size || row == col {
-            return None;
-        }
-        Some(&self.data[index_for(self.size, row.min(col), row.max(col))])
-    }
-
     #[inline]
     fn label_to_index<S: AsRef<str>>(&self, label: S) -> Option<usize> {
         self.labels
@@ -184,17 +174,6 @@ impl<D> DistMatrix<D> {
         let row = self.label_to_index(row)?;
         let col = self.label_to_index(col)?;
         self.get(row, col)
-    }
-
-    /// Retrieve an element by reference from the distance matrix.
-    ///
-    /// Equivalent to [`get_symmetric`](DistMatrix::get_symmetric) after converting the labels to
-    /// indices, except that `None` will additionally be returned if either `row` or `col` are not
-    /// known labels.
-    pub fn get_symmetric_by_name<S: AsRef<str>>(&self, row: S, col: S) -> Option<&D> {
-        let row = self.label_to_index(row)?;
-        let col = self.label_to_index(col)?;
-        self.get_symmetric(row, col)
     }
 
     /// Decompose into the stored labels and data.
@@ -378,7 +357,38 @@ impl<D: Copy> DistMatrix<&D> {
     }
 }
 
+// FIXME find a way to remove these bounds. The problem is what to do when we want to return
+// a default value by reference. It's not obvious how to create a value with Default::default()
+// that has the appropriate lifetime.
 impl<D: Copy + Default> DistMatrix<D> {
+    /// Retrieve an element by reference from the distance matrix.
+    ///
+    /// Coordinates are treated as logical coordinates in the full matrix, i.e. coordinates in the
+    /// upper triangle are reflected into the lower triangle, and coordinates on the diagonal
+    /// return the default value.
+    ///
+    /// If either of the indices exceeds the size of the distance matrix, `None` is returned.
+    pub fn get_symmetric(&self, row: usize, col: usize) -> Option<D> {
+        if row >= self.size || col >= self.size {
+            return None;
+        }
+        if row == col {
+            return Some(D::default());
+        }
+        Some(self.data[index_for(self.size, row.min(col), row.max(col))])
+    }
+
+    /// Retrieve an element by reference from the distance matrix.
+    ///
+    /// Equivalent to [`get_symmetric`](DistMatrix::get_symmetric) after converting the labels to
+    /// indices, except that `None` will additionally be returned if either `row` or `col` are not
+    /// known labels.
+    pub fn get_symmetric_by_name<S: AsRef<str>>(&self, row: S, col: S) -> Option<D> {
+        let row = self.label_to_index(row)?;
+        let col = self.label_to_index(col)?;
+        self.get_symmetric(row, col)
+    }
+
     /// Iterate over rows of the distance matrix.
     #[inline]
     pub fn iter_rows(&self) -> Rows<D> {
@@ -718,8 +728,8 @@ mod tests {
         let m: DistMatrix<u32> = vec![1, 2, 3, 4, 1, 2, 3, 1, 2, 1].into();
         assert_eq!(m.get(0, 3), Some(&3));
         assert_eq!(m.get(3, 0), None);
-        assert_eq!(m.get_symmetric(3, 0), Some(&3));
-        assert_eq!(m.get_symmetric(2, 2), None);
+        assert_eq!(m.get_symmetric(3, 0), Some(3));
+        assert_eq!(m.get_symmetric(2, 2), Some(0));
     }
 
     #[test]
@@ -728,7 +738,7 @@ mod tests {
         m.set_labels(mk_labels(["A", "B", "C", "D", "E"]));
         assert_eq!(m.get_by_name("A", "D"), Some(&3));
         assert_eq!(m.get_by_name("D", "A"), None);
-        assert_eq!(m.get_symmetric_by_name("D", "A"), Some(&3));
+        assert_eq!(m.get_symmetric_by_name("D", "A"), Some(3));
     }
 
     #[test]
@@ -814,5 +824,18 @@ mod tests {
         let labels: Vec<&str> = m.iter_labels().collect();
         assert_eq!(labels, vec!["seq1", "seq2", "seq3", "seq4"]);
         assert_eq!(m.size(), 4);
+    }
+
+    #[test]
+    fn readme() {
+        // A symmetric matrix stored as the lower triangle:
+        //   _1__5__3
+        // 1|
+        // 5| 4
+        // 3| 2  2
+        let matrix1 = DistMatrix::from_pw_distances(&[1, 5, 3]);
+        assert_eq!(matrix1.get(1, 2), Some(&2));
+        assert_eq!(matrix1.get(2, 1), None);
+        assert_eq!(matrix1.get_symmetric(2, 1), Some(2));
     }
 }
