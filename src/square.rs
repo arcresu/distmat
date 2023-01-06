@@ -219,7 +219,7 @@ impl<D: Copy> SquareMatrix<D> {
     /// Retain only the lower triangle of the matrix.
     pub fn lower_triangle(&self) -> DistMatrix<D> {
         let mut m: DistMatrix<D> = Coordinates::new(self.size)
-            .map(|(i, j)| self.data[index_for(self.size, i, j)])
+            .map(|(i, j)| self.data[index_for(self.size, j, i)])
             .collect();
         m.labels = self.labels.clone();
         m
@@ -608,9 +608,16 @@ mod tests {
 
     #[test]
     fn test_to_sym() {
-        let m = SquareMatrix::<u32>::from_pw_distances(&[1_u32, 2, 3, 4, 5]);
-        let m1 = DistMatrix::<u32>::from_pw_distances(&[1_u32, 2, 3, 4, 5]);
-        let m2: DistMatrix<u32> = m.lower_triangle();
+        #[rustfmt::skip]
+        let m: SquareMatrix<u32> = [
+            0, 0, 0,  0, 0,
+            1, 0, 0,  0, 0,
+            2, 5, 0,  0, 0,
+            3, 6, 8,  0, 0,
+            4, 7, 9, 10, 0,
+        ].into_iter().collect();
+        let m1: DistMatrix<u32> = m.lower_triangle();
+        let m2: DistMatrix<u32> = (1..=10).collect();
 
         assert_eq!(m1, m2);
     }
