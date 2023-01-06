@@ -14,6 +14,12 @@ use crate::symmetric::Coordinates;
 use crate::{open_file, AbsDiff, DistMatrix};
 
 /// Stores a full distance matrix in row-major order.
+///
+/// This type is necessary to represent a distance measure that is not symmetric, and is useful
+/// when the performance of accessing or iterating over elements is more important than the memory
+/// usage.
+///
+/// The rowwise/colwise iterators are available when `D: Copy` as they yield copies of values.
 #[derive(PartialEq, Eq, Clone)]
 #[cfg_attr(test, derive(Debug))]
 pub struct SquareMatrix<D> {
@@ -22,17 +28,22 @@ pub struct SquareMatrix<D> {
     pub(crate) labels: Option<Vec<String>>,
 }
 
+/// Iterator over matrix rows; see [`SquareMatrix::iter_rows`].
 pub struct Rows<'a, D>(ChunksExact<'a, D>);
 
+/// Copying iterator over a row of the matrix; see [`SquareMatrix::iter_rows`].
 pub struct Row<'a, D>(slice::Iter<'a, D>);
 
+/// Iterator over matrix columns; see [`SquareMatrix::iter_cols`].
 pub struct Columns<'a, D> {
     matrix: &'a SquareMatrix<D>,
     column: Range<usize>,
 }
 
+/// Copying iterator over a column of the matrix; see [`SquareMatrix::iter_cols`].
 pub struct Column<'a, D>(StepBy<slice::Iter<'a, D>>);
 
+/// Iterator by reference over element labels; see [`SquareMatrix::iter_labels`].
 pub struct Labels<'a>(pub(crate) Option<slice::Iter<'a, String>>);
 
 pub type Iter<'a, D> = std::slice::Iter<'a, D>;
@@ -91,7 +102,7 @@ impl<D> SquareMatrix<D> {
         }
     }
 
-    /// Return the stored distance data in row-major order and any labels.
+    /// Decompose into the stored labels and data.
     #[inline]
     pub fn into_inner(self) -> (Option<Vec<String>>, Vec<D>) {
         (self.labels, self.data)
@@ -107,7 +118,7 @@ impl<D> SquareMatrix<D> {
         self.data.iter_mut()
     }
 
-    /// Iterator over labels for the underlying elements.
+    /// Iterator by reference over labels for the underlying elements.
     ///
     /// If no labels are configured for this matrix, the iterator will be empty.
     /// See [Labels::has_labels()] and [set_labels()](DistMatrix::set_labels).
@@ -116,7 +127,7 @@ impl<D> SquareMatrix<D> {
         Labels(self.labels.as_ref().map(|labs| labs.iter()))
     }
 
-    /// Set labels for the underlying elements.
+    /// Replace the element labels.
     ///
     /// Panics if the number of labels is not the same as `self.size()`.
     #[inline]
@@ -125,7 +136,7 @@ impl<D> SquareMatrix<D> {
         self.labels = Some(new_labels);
     }
 
-    /// Remove all labels for the underlying elements.
+    /// Remove the element labels.
     #[inline]
     pub fn clear_labels(&mut self) {
         self.labels = None;

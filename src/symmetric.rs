@@ -14,8 +14,16 @@ use crate::{open_file, AbsDiff};
 
 /// Stores the lower triangle of a matrix.
 ///
-/// This is based on the assumption that the distance measure is symmetric and that the diagonal
-/// elements are all zero.
+/// This type stores only `n * (n-1) / 2` elements instead of the full `n * n` elements, so is more
+/// memory efficient at the expense of a less straightforward mapping between matrix coordinates
+/// and storage index.
+///
+/// Elements of the matrix can be accessed either using the precise coordinates of the lower
+/// triangle using [`get`](DistMatrix::get), or using the symmetric version
+/// [`get_symmetric`](DistMatrix::get_symmetric). In the latter case, coordinates in the upper
+/// triangle are reflected, and coordinates on the diagonal return `D::default()`.
+///
+/// The rowwise iterators are available when `D: Copy` as they yield copies of values.
 #[derive(PartialEq, Eq, Clone)]
 #[cfg_attr(test, derive(Debug))]
 pub struct DistMatrix<D> {
@@ -24,17 +32,20 @@ pub struct DistMatrix<D> {
     pub(crate) labels: Option<Vec<String>>,
 }
 
+/// Iterator over matrix rows; see [`DistMatrix::iter_rows`].
 pub struct Rows<'a, D> {
     matrix: &'a DistMatrix<D>,
     row: std::ops::Range<usize>,
 }
 
+/// Copying iterator over a row of the matrix; see [`DistMatrix::iter_rows`].
 pub struct Row<'a, D> {
     matrix: &'a DistMatrix<D>,
     row: usize,
     span: Span<'a, D>,
 }
 
+/// Iterator over matrix coordinates; see [`DistMatrix::iter_coords`].
 pub struct Coordinates {
     i: usize,
     j: usize,
@@ -94,7 +105,7 @@ impl<D> DistMatrix<D> {
             .collect()
     }
 
-    /// Return the stored distance data and any labels.
+    /// Decompose into the stored labels and data.
     ///
     /// The order is compatible with R's `dist` objects.
     #[inline]
@@ -104,14 +115,14 @@ impl<D> DistMatrix<D> {
 
     /// Iterate by reference over all values in the matrix.
     ///
-    /// The order corresponds to that of `iter_coords`.
+    /// The order corresponds to that of [`iter_coords`](DistMatrix::iter_coords).
     pub fn iter(&self) -> Iter<D> {
         self.data.iter()
     }
 
     /// Iterate by mutable reference over all values in the matrix.
     ///
-    /// The order corresponds to that of `iter_coords`.
+    /// The order corresponds to that of [`iter_coords`](DistMatrix::iter_coords).
     pub fn iter_mut(&mut self) -> IterMut<D> {
         self.data.iter_mut()
     }
@@ -127,13 +138,13 @@ impl<D> DistMatrix<D> {
     /// Iterator over labels for the underlying elements.
     ///
     /// If no labels are configured for this matrix, the iterator will be empty.
-    /// See [Labels::has_labels()] and [set_labels()](DistMatrix::set_labels).
+    /// See [`Labels::has_labels`] and [`set_labels`](DistMatrix::set_labels).
     #[inline]
     pub fn iter_labels(&self) -> Labels {
         Labels(self.labels.as_ref().map(|labs| labs.iter()))
     }
 
-    /// Set labels for the underlying elements.
+    /// Replace the element labels.
     ///
     /// Panics if the number of labels is not the same as `self.size()`.
     #[inline]
@@ -142,7 +153,7 @@ impl<D> DistMatrix<D> {
         self.labels = Some(new_labels);
     }
 
-    /// Remove all labels for the underlying elements.
+    /// Remove the element labels.
     #[inline]
     pub fn clear_labels(&mut self) {
         self.labels = None;
