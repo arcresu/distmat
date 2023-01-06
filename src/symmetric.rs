@@ -261,6 +261,49 @@ impl<D> DistMatrix<D> {
         }
     }
 
+    /// Create a new matrix from a subset of elements.
+    ///
+    /// `positions` gives the row/column indices of the elements that should be retained. The
+    /// returned matrix will reference the corresponding elements from the original matrix, and
+    /// will have a size equal to the number of distinct values in `positions`.
+    ///
+    /// Panics if any of the positions are out of range.
+    pub fn subset(&self, positions: &[usize]) -> DistMatrix<&D> {
+        if positions.is_empty() {
+            return DistMatrix {
+                data: Vec::new(),
+                size: 1,
+                labels: None,
+            };
+        }
+
+        let mut positions = positions.to_vec();
+        positions.sort_unstable();
+        positions.dedup();
+        assert!(*positions.last().unwrap() < self.size);
+
+        let data: Vec<&D> = Coordinates::new(self.size)
+            .zip(&self.data)
+            .filter_map(|((i, j), v)| {
+                let keep =
+                    positions.binary_search(&i).is_ok() && positions.binary_search(&j).is_ok();
+                keep.then_some(v)
+            })
+            .collect();
+        let size = positions.len();
+        assert_eq!(size, n_items(data.len()));
+
+        let labels = self.labels.as_ref().map(|labs| {
+            let mut new_labs = Vec::with_capacity(positions.len());
+            for pos in positions {
+                new_labs.push(labs[pos].clone());
+            }
+            new_labs
+        });
+
+        DistMatrix { data, size, labels }
+    }
+
     /// The number of rows/cols in the full matrix.
     #[inline]
     pub fn size(&self) -> usize {
@@ -332,47 +375,6 @@ impl<D: Copy> DistMatrix<&D> {
             size: self.size,
             labels: self.labels,
         }
-    }
-}
-
-impl<D: Copy> DistMatrix<D> {
-    /// Copy a subset of the distance matrix corresponding to the specified row/column positions.
-    ///
-    /// Panics if any of the positions are out of range.
-    pub fn subset(&self, positions: &[usize]) -> Self {
-        if positions.is_empty() {
-            return DistMatrix {
-                data: Vec::new(),
-                size: 1,
-                labels: None,
-            };
-        }
-
-        let mut positions = positions.to_vec();
-        positions.sort_unstable();
-        positions.dedup();
-        assert!(*positions.last().unwrap() < self.size);
-
-        let data: Vec<D> = Coordinates::new(self.size)
-            .zip(&self.data)
-            .filter_map(|((i, j), &v)| {
-                let keep =
-                    positions.binary_search(&i).is_ok() && positions.binary_search(&j).is_ok();
-                keep.then_some(v)
-            })
-            .collect();
-        let size = positions.len();
-        assert_eq!(size, n_items(data.len()));
-
-        let labels = self.labels.as_ref().map(|labs| {
-            let mut new_labs = Vec::with_capacity(positions.len());
-            for pos in positions {
-                new_labs.push(labs[pos].clone());
-            }
-            new_labs
-        });
-
-        DistMatrix { data, size, labels }
     }
 }
 
@@ -804,7 +806,7 @@ mod tests {
     fn test_subset() {
         let dist1 = DistMatrix::from_pw_distances(&[1, 2, 6, 8, 3, 1, 9, 3, 4]);
         let dist2 = DistMatrix::from_pw_distances(&[1, 6, 8, 9, 3]);
-        assert_eq!(dist1.subset(&[0, 2, 3, 6, 7]), dist2);
+        assert_eq!(dist1.subset(&[0, 2, 3, 6, 7]).copied(), dist2);
     }
 
     #[test]
