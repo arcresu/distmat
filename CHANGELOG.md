@@ -2,9 +2,9 @@
 
 ## distmat 0.4.0
 
-  * The matrix types are now more useful when `D` is not `Copy`. Accessors now
-    return values by reference, although the rowwise and colwise iterators are
-    still copying.
+  * The matrix types are now more useful when `D` is not `Copy`. Accessors and
+    iterators now return values by reference, although the rowwise iterators
+    for `DistMatrix` are still copying.
   * The matrix types gained by-reference iterators over the underlying data
     vectors (`iter()` and `iter_mut()`).
 

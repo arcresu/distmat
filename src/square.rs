@@ -18,8 +18,6 @@ use crate::{open_file, AbsDiff, DistMatrix};
 /// This type is necessary to represent a distance measure that is not symmetric, and is useful
 /// when the performance of accessing or iterating over elements is more important than the memory
 /// usage.
-///
-/// The rowwise/colwise iterators are available when `D: Copy` as they yield copies of values.
 #[derive(PartialEq, Eq, Clone)]
 #[cfg_attr(test, derive(Debug))]
 pub struct SquareMatrix<D> {
@@ -31,7 +29,7 @@ pub struct SquareMatrix<D> {
 /// Iterator over matrix rows; see [`SquareMatrix::iter_rows`].
 pub struct Rows<'a, D>(ChunksExact<'a, D>);
 
-/// Copying iterator over a row of the matrix; see [`SquareMatrix::iter_rows`].
+/// Iterator by reference over a row of the matrix; see [`SquareMatrix::iter_rows`].
 pub struct Row<'a, D>(slice::Iter<'a, D>);
 
 /// Iterator over matrix columns; see [`SquareMatrix::iter_cols`].
@@ -40,7 +38,7 @@ pub struct Columns<'a, D> {
     column: Range<usize>,
 }
 
-/// Copying iterator over a column of the matrix; see [`SquareMatrix::iter_cols`].
+/// Iterator by reference over a column of the matrix; see [`SquareMatrix::iter_cols`].
 pub struct Column<'a, D>(StepBy<slice::Iter<'a, D>>);
 
 /// Iterator by reference over element labels; see [`SquareMatrix::iter_labels`].
@@ -175,6 +173,37 @@ impl<D> SquareMatrix<D> {
     /// Iterate by mutable reference over all values in the matrix in row-major order.
     pub fn iter_mut(&mut self) -> IterMut<D> {
         self.data.iter_mut()
+    }
+
+    /// Iterator over pairwise distances from the specified point to all points in order, including
+    /// itself.
+    #[inline]
+    pub fn iter_from_point(&self, idx: usize) -> Row<D> {
+        let start = idx * self.size;
+        let end = start + self.size;
+        Row(self.data[start..end].iter())
+    }
+
+    /// Iterator over pairwise distances from all points (including itself) to the specified point
+    /// in order.
+    #[inline]
+    pub fn iter_to_point(&self, idx: usize) -> Column<D> {
+        Column(self.data[idx..].iter().step_by(self.size))
+    }
+
+    /// Iterate over rows of the distance matrix.
+    #[inline]
+    pub fn iter_rows(&self) -> Rows<D> {
+        Rows(self.data.chunks_exact(self.size))
+    }
+
+    /// Iterate over columns of the distance matrix.
+    #[inline]
+    pub fn iter_cols(&self) -> Columns<D> {
+        Columns {
+            matrix: self,
+            column: 0..self.size,
+        }
     }
 
     /// Iterator by reference over labels for the underlying elements.
@@ -312,39 +341,6 @@ impl<D: Copy> SquareMatrix<&D> {
     }
 }
 
-impl<D: Copy> SquareMatrix<D> {
-    /// Iterator over pairwise distances from the specified point to all points in order, including
-    /// itself.
-    #[inline]
-    pub fn iter_from_point(&self, idx: usize) -> Row<D> {
-        let start = idx * self.size;
-        let end = start + self.size;
-        Row(self.data[start..end].iter())
-    }
-
-    /// Iterator over pairwise distances from all points (including itself) to the specified point
-    /// in order.
-    #[inline]
-    pub fn iter_to_point(&self, idx: usize) -> Column<D> {
-        Column(self.data[idx..].iter().step_by(self.size))
-    }
-
-    /// Iterate over rows of the distance matrix.
-    #[inline]
-    pub fn iter_rows(&self) -> Rows<D> {
-        Rows(self.data.chunks_exact(self.size))
-    }
-
-    /// Iterate over columns of the distance matrix.
-    #[inline]
-    pub fn iter_cols(&self) -> Columns<D> {
-        Columns {
-            matrix: self,
-            column: 0..self.size,
-        }
-    }
-}
-
 /// Mirror the lower triangle and fill in the diagonal with the default value.
 impl<D: Copy + Default> From<DistMatrix<D>> for SquareMatrix<D> {
     #[inline]
@@ -408,12 +404,12 @@ impl<'a, D> Row<'a, D> {
     }
 }
 
-impl<'a, D: Copy> Iterator for Row<'a, D> {
-    type Item = D;
+impl<'a, D> Iterator for Row<'a, D> {
+    type Item = &'a D;
 
     #[inline]
-    fn next(&mut self) -> Option<D> {
-        self.0.next().copied()
+    fn next(&mut self) -> Option<&'a D> {
+        self.0.next()
     }
 
     #[inline]
@@ -422,21 +418,21 @@ impl<'a, D: Copy> Iterator for Row<'a, D> {
     }
 }
 
-impl<'a, D: Copy> ExactSizeIterator for Row<'a, D> {}
+impl<'a, D> ExactSizeIterator for Row<'a, D> {}
 
-impl<'a, D: Copy> DoubleEndedIterator for Row<'a, D> {
+impl<'a, D> DoubleEndedIterator for Row<'a, D> {
     #[inline]
-    fn next_back(&mut self) -> Option<D> {
-        self.0.next_back().copied()
+    fn next_back(&mut self) -> Option<&'a D> {
+        self.0.next_back()
     }
 }
 
-impl<'a, D: Copy> Iterator for Column<'a, D> {
-    type Item = D;
+impl<'a, D> Iterator for Column<'a, D> {
+    type Item = &'a D;
 
     #[inline]
-    fn next(&mut self) -> Option<D> {
-        self.0.next().copied()
+    fn next(&mut self) -> Option<&'a D> {
+        self.0.next()
     }
 
     #[inline]
@@ -446,7 +442,7 @@ impl<'a, D: Copy> Iterator for Column<'a, D> {
     }
 }
 
-impl<'a, D: Copy> ExactSizeIterator for Column<'a, D> {}
+impl<'a, D> ExactSizeIterator for Column<'a, D> {}
 
 impl<'a> Iterator for Labels<'a> {
     type Item = &'a str;
@@ -562,27 +558,27 @@ mod tests {
         let m = SquareMatrix::from_pw_distances_with(&[1_i32, 6, 2, 5], |x, y| x - y);
 
         let mut r0 = m.iter_from_point(0);
-        assert_eq!(r0.next(), Some(0));
-        assert_eq!(r0.next(), Some(-5));
-        assert_eq!(r0.next(), Some(-1));
-        assert_eq!(r0.next(), Some(-4));
+        assert_eq!(r0.next(), Some(&0));
+        assert_eq!(r0.next(), Some(&-5));
+        assert_eq!(r0.next(), Some(&-1));
+        assert_eq!(r0.next(), Some(&-4));
         assert_eq!(r0.next(), None);
 
         let mut r1 = m.iter_from_point(1);
-        assert_eq!(r1.next(), Some(5));
-        assert_eq!(r1.next(), Some(0));
-        assert_eq!(r1.next(), Some(4));
-        assert_eq!(r1.next(), Some(1));
+        assert_eq!(r1.next(), Some(&5));
+        assert_eq!(r1.next(), Some(&0));
+        assert_eq!(r1.next(), Some(&4));
+        assert_eq!(r1.next(), Some(&1));
         assert_eq!(r1.next(), None);
 
         let m = SquareMatrix::<u32>::from_pw_distances(&[1u32, 6, 2, 5, 10]);
 
         let mut r2 = m.iter_from_point(2);
-        assert_eq!(r2.next(), Some(1));
-        assert_eq!(r2.next(), Some(4));
-        assert_eq!(r2.next(), Some(0));
-        assert_eq!(r2.next(), Some(3));
-        assert_eq!(r2.next(), Some(8));
+        assert_eq!(r2.next(), Some(&1));
+        assert_eq!(r2.next(), Some(&4));
+        assert_eq!(r2.next(), Some(&0));
+        assert_eq!(r2.next(), Some(&3));
+        assert_eq!(r2.next(), Some(&8));
         assert_eq!(r2.next(), None);
     }
 
@@ -591,27 +587,27 @@ mod tests {
         let m = SquareMatrix::from_pw_distances_with(&[1_i32, 6, 2, 5], |x, y| x - y);
 
         let mut r0 = m.iter_to_point(0);
-        assert_eq!(r0.next(), Some(0));
-        assert_eq!(r0.next(), Some(5));
-        assert_eq!(r0.next(), Some(1));
-        assert_eq!(r0.next(), Some(4));
+        assert_eq!(r0.next(), Some(&0));
+        assert_eq!(r0.next(), Some(&5));
+        assert_eq!(r0.next(), Some(&1));
+        assert_eq!(r0.next(), Some(&4));
         assert_eq!(r0.next(), None);
 
         let mut r1 = m.iter_to_point(1);
-        assert_eq!(r1.next(), Some(-5));
-        assert_eq!(r1.next(), Some(0));
-        assert_eq!(r1.next(), Some(-4));
-        assert_eq!(r1.next(), Some(-1));
+        assert_eq!(r1.next(), Some(&-5));
+        assert_eq!(r1.next(), Some(&0));
+        assert_eq!(r1.next(), Some(&-4));
+        assert_eq!(r1.next(), Some(&-1));
         assert_eq!(r1.next(), None);
 
         let m = SquareMatrix::<u32>::from_pw_distances(&[1u32, 6, 2, 5, 10]);
 
         let mut r2 = m.iter_to_point(2);
-        assert_eq!(r2.next(), Some(1));
-        assert_eq!(r2.next(), Some(4));
-        assert_eq!(r2.next(), Some(0));
-        assert_eq!(r2.next(), Some(3));
-        assert_eq!(r2.next(), Some(8));
+        assert_eq!(r2.next(), Some(&1));
+        assert_eq!(r2.next(), Some(&4));
+        assert_eq!(r2.next(), Some(&0));
+        assert_eq!(r2.next(), Some(&3));
+        assert_eq!(r2.next(), Some(&8));
         assert_eq!(r2.next(), None);
     }
 
@@ -619,7 +615,7 @@ mod tests {
     fn test_iter_rows() {
         fn expect_row(row: Option<Row<i32>>, reference: Vec<i32>) {
             assert!(row.is_some());
-            assert_eq!(row.unwrap().collect::<Vec<i32>>(), reference);
+            assert_eq!(row.unwrap().copied().collect::<Vec<i32>>(), reference);
         }
 
         let m = SquareMatrix::from_pw_distances_with(&[1_i32, 6, 2, 5], |x, y| x - y);
@@ -635,7 +631,7 @@ mod tests {
     fn test_iter_cols() {
         fn expect_col(col: Option<Column<i32>>, reference: Vec<i32>) {
             assert!(col.is_some());
-            assert_eq!(col.unwrap().collect::<Vec<i32>>(), reference);
+            assert_eq!(col.unwrap().copied().collect::<Vec<i32>>(), reference);
         }
 
         let m = SquareMatrix::from_pw_distances_with(&[1_i32, 6, 2, 5], |x, y| x - y);
