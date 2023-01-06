@@ -145,7 +145,7 @@ impl<D> SquareMatrix<D> {
     fn label_to_index<S: AsRef<str>>(&self, label: S) -> Option<usize> {
         self.labels
             .as_ref()?
-            .into_iter()
+            .iter()
             .position(|l| l == label.as_ref())
     }
 
@@ -232,8 +232,8 @@ impl<D> SquareMatrix<D> {
 
     /// Convert distances using the provided function.
     #[inline]
-    pub fn map_with<T, F: FnMut(&D) -> T>(&self, mapper: F) -> DistMatrix<T> {
-        DistMatrix {
+    pub fn map_with<T, F: FnMut(&D) -> T>(&self, mapper: F) -> SquareMatrix<T> {
+        SquareMatrix {
             data: self.data.iter().map(mapper).collect(),
             size: self.size,
             labels: self.labels.clone(),
@@ -488,38 +488,40 @@ mod tests {
 
     #[test]
     fn test_from_pw_distances() {
-        //    1  6  2  5
-        //   ------------
-        // 1| 0  5  1  4
-        // 6| 5  0  4  1
-        // 2| 1  4  0  3
-        // 5| 4  1  3  0
-        let m = SquareMatrix::<u32>::from_pw_distances(&[1_u32, 6, 2, 5]);
-        assert_eq!(m.data, vec![0, 5, 1, 4, 5, 0, 4, 1, 1, 4, 0, 3, 4, 1, 3, 0]);
+        #[rustfmt::skip]
+        let m1 = vec![
+        //  1  6  2  5
+            0, 5, 1, 4, // 1
+            5, 0, 4, 1, // 6
+            1, 4, 0, 3, // 2
+            4, 1, 3, 0, // 5
+        ].into();
+        let m2 = SquareMatrix::from_pw_distances(&[1_u32, 6, 2, 5]);
+        assert_eq!(m2, m1);
 
-        let m = SquareMatrix::<i32>::from_pw_distances(&[1_i32, 6, 2, 5]);
-        assert_eq!(m.data, vec![0, 5, 1, 4, 5, 0, 4, 1, 1, 4, 0, 3, 4, 1, 3, 0]);
+        let m3 = m1.map_with(|x| *x as i32);
+        let m4 = SquareMatrix::from_pw_distances(&[1_i32, 6, 2, 5]);
+        assert_eq!(m4, m3);
     }
 
     #[test]
     fn test_from_pw_distances_with() {
-        //    1   6   2   5
-        //   ---------------
-        // 1| 0  -5  -1  -4
-        // 6| 5   0   4   1
-        // 2| 1  -4   0  -3
-        // 5| 4  -1   3   0
-        let m = SquareMatrix::from_pw_distances_with(&[1_i32, 6, 2, 5], |x, y| x - y);
-        assert_eq!(
-            m.data,
-            vec![0, -5, -1, -4, 5, 0, 4, 1, 1, -4, 0, -3, 4, -1, 3, 0]
-        );
+        #[rustfmt::skip]
+        let m1 = vec![
+        //  1   6   2   5
+            0, -5, -1, -4, // 1
+            5,  0,  4,  1, // 6
+            1, -4,  0, -3, // 2
+            4, -1,  3,  0, // 5
+        ].into();
+        let m2 = SquareMatrix::from_pw_distances_with(&[1_i32, 6, 2, 5], |x, y| x - y);
+        assert_eq!(m2, m1);
     }
 
     #[test]
     fn test_from_iter() {
         let m: SquareMatrix<u32> = SquareMatrix::from_pw_distances(&[1u32, 6, 2, 5]);
-        let m2: SquareMatrix<u32> = m.data.clone().into_iter().collect();
+        let m2: SquareMatrix<u32> = m.data.clone().into();
         assert_eq!(m, m2);
     }
 
@@ -655,13 +657,13 @@ mod tests {
     #[test]
     fn test_to_sym() {
         #[rustfmt::skip]
-        let m: SquareMatrix<u32> = [
+        let m: SquareMatrix<u32> = vec![
             0, 0, 0,  0, 0,
             1, 0, 0,  0, 0,
             2, 5, 0,  0, 0,
             3, 6, 8,  0, 0,
             4, 7, 9, 10, 0,
-        ].into_iter().collect();
+        ].into();
         let m1: DistMatrix<u32> = m.lower_triangle().copied();
         let m2: DistMatrix<u32> = (1..=10).collect();
 
@@ -671,13 +673,13 @@ mod tests {
     #[test]
     fn test_to_sym_inplace() {
         #[rustfmt::skip]
-        let m: SquareMatrix<u32> = [
+        let m: SquareMatrix<u32> = vec![
             0, 0, 0,  0, 0,
             1, 0, 0,  0, 0,
             2, 5, 0,  0, 0,
             3, 6, 8,  0, 0,
             4, 7, 9, 10, 0,
-        ].into_iter().collect();
+        ].into();
         let m1: DistMatrix<u32> = m.into_lower_triangle();
         let m2: DistMatrix<u32> = (1..=10).collect();
 
@@ -705,5 +707,28 @@ mod tests {
         let labels: Vec<&str> = m.iter_labels().collect();
         assert_eq!(labels, vec!["seq1", "seq2", "seq3", "seq4"]);
         assert_eq!(m.size(), 4);
+    }
+
+    #[test]
+    fn readme() {
+        // A symmetric matrix stored as the lower triangle:
+        //   _1__5__3
+        // 1|
+        // 5| 4
+        // 3| 2  2
+        let matrix1 = DistMatrix::from_pw_distances(&[1, 5, 3]);
+        assert_eq!(matrix1.get_symmetric(1, 2), Some(&2));
+
+        // A square matrix stored in row major order:
+        //   _1___5___3
+        // 1| 0  -4  -2
+        // 5| 4   0   2
+        // 3| 2  -2   0
+        let matrix2 = SquareMatrix::from_pw_distances_with(&[1, 5, 3], |x, y| x - y);
+        let mut total = 0;
+        for row in matrix2.iter_rows() {
+            total += row.sum::<i32>();
+        }
+        assert_eq!(total, 0);
     }
 }

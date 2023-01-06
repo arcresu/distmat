@@ -20,7 +20,7 @@ fn main() {
     // 5| 4
     // 3| 2  2
     let matrix1 = DistMatrix::from_pw_distances(&[1, 5, 3]);
-    assert_eq!(matrix1.get_symmetric(1, 2), Some(2));
+    assert_eq!(matrix1.get_symmetric(1, 2), Some(&2));
 
     // A square matrix stored in row major order:
     //   _1___5___3
@@ -30,8 +30,9 @@ fn main() {
     let matrix2 = SquareMatrix::from_pw_distances_with(&[1, 5, 3], |x, y| x - y);
     let mut total = 0;
     for row in matrix2.iter_rows() {
-        total += row.sum();
+        total += row.sum::<i32>();
     }
+    assert_eq!(total, 0);
 
     let _matrix =
         SquareMatrix::from_tabular_file("snp-dists.dat", Separator::Char('\t'), TabularShape::Wide).unwrap();

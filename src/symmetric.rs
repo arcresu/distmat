@@ -162,7 +162,7 @@ impl<D> DistMatrix<D> {
     /// If either of the indices exceeds the size of the distance matrix or `row == col`, then
     /// `None` is returned.
     pub fn get_symmetric(&self, row: usize, col: usize) -> Option<&D> {
-        if row >= self.size || col >= self.size {
+        if row >= self.size || col >= self.size || row == col {
             return None;
         }
         Some(&self.data[index_for(self.size, row.min(col), row.max(col))])
@@ -172,7 +172,7 @@ impl<D> DistMatrix<D> {
     fn label_to_index<S: AsRef<str>>(&self, label: S) -> Option<usize> {
         self.labels
             .as_ref()?
-            .into_iter()
+            .iter()
             .position(|l| l == label.as_ref())
     }
 
@@ -669,7 +669,7 @@ mod tests {
         // 2 1 0 1 2  ->  2 1
         // 3 2 1 0 1  ->  3 2 1
         // 4 3 2 1 0  ->  4 3 2 1
-        let m: DistMatrix<u32> = [1, 2, 3, 4, 1, 2, 3, 1, 2, 1].into_iter().collect();
+        let m: DistMatrix<u32> = vec![1, 2, 3, 4, 1, 2, 3, 1, 2, 1].into();
 
         let mut r0 = m.iter_from_point(0);
         assert_eq!(r0.next(), Some(0));
@@ -701,9 +701,7 @@ mod tests {
         // 3 2 1 0 1 2  ->  3 2 1
         // 4 3 2 1 0 1  ->  4 3 2 1
         // 5 4 3 2 1 0  ->  5 4 3 2 1
-        let m: DistMatrix<u32> = [1, 2, 3, 4, 5, 1, 2, 3, 4, 1, 2, 3, 1, 2, 1]
-            .into_iter()
-            .collect();
+        let m: DistMatrix<u32> = vec![1, 2, 3, 4, 5, 1, 2, 3, 4, 1, 2, 3, 1, 2, 1].into();
 
         let mut r2 = m.iter_from_point(2);
         assert_eq!(r2.next(), Some(2));
@@ -716,16 +714,17 @@ mod tests {
     }
 
     #[test]
-    fn test_getters() {
-        let m: DistMatrix<u32> = [1, 2, 3, 4, 1, 2, 3, 1, 2, 1].into_iter().collect();
+    fn getters() {
+        let m: DistMatrix<u32> = vec![1, 2, 3, 4, 1, 2, 3, 1, 2, 1].into();
         assert_eq!(m.get(0, 3), Some(&3));
         assert_eq!(m.get(3, 0), None);
         assert_eq!(m.get_symmetric(3, 0), Some(&3));
+        assert_eq!(m.get_symmetric(2, 2), None);
     }
 
     #[test]
-    fn test_getters_by_name() {
-        let mut m: DistMatrix<u32> = [1, 2, 3, 4, 1, 2, 3, 1, 2, 1].into_iter().collect();
+    fn getters_by_name() {
+        let mut m: DistMatrix<u32> = vec![1, 2, 3, 4, 1, 2, 3, 1, 2, 1].into();
         m.set_labels(mk_labels(["A", "B", "C", "D", "E"]));
         assert_eq!(m.get_by_name("A", "D"), Some(&3));
         assert_eq!(m.get_by_name("D", "A"), None);
@@ -744,7 +743,7 @@ mod tests {
         // 2 1 0 1 2  ->  2 1
         // 3 2 1 0 1  ->  3 2 1
         // 4 3 2 1 0  ->  4 3 2 1
-        let m: DistMatrix<u32> = [1, 2, 3, 4, 1, 2, 3, 1, 2, 1].into_iter().collect();
+        let m: DistMatrix<u32> = vec![1, 2, 3, 4, 1, 2, 3, 1, 2, 1].into();
 
         let mut rows = m.iter_rows();
         expect_row(rows.next(), vec![0, 1, 2, 3, 4]);
@@ -789,7 +788,7 @@ mod tests {
     #[test]
     fn test_from_iter() {
         let m: DistMatrix<u32> = DistMatrix::from_pw_distances(&[1u32, 6, 2, 5]);
-        let m2: DistMatrix<u32> = m.data.clone().into_iter().collect();
+        let m2: DistMatrix<u32> = m.data.clone().into();
         assert_eq!(m, m2);
     }
 
