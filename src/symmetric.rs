@@ -46,6 +46,9 @@ pub struct Row<'a, D> {
 }
 
 /// Iterator over matrix coordinates; see [`DistMatrix::iter_coords`].
+///
+/// Coordinates are yielded as `(row, column)` in the order they are stored by [`DistMatrix`] in
+/// its internal vector.
 pub struct Coordinates {
     i: usize,
     j: usize,
@@ -509,8 +512,12 @@ impl<'a, D: Copy + Default> Iterator for Row<'a, D> {
 impl<'a, D: Copy + Default> ExactSizeIterator for Row<'a, D> {}
 
 impl Coordinates {
+    /// Create an iterator compatible with a [`DistMatrix`] of size `n`.
+    ///
+    /// The [`iter_coords`](DistMatrix::iter_coords) method is more convenient when you
+    /// have a specific matrix constructed.
     #[inline]
-    pub(super) fn new(n: usize) -> Self {
+    pub fn new(n: usize) -> Self {
         Self {
             i: 0,
             j: 0,
