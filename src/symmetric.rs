@@ -934,6 +934,9 @@ mod tests {
         let matrix1 = DistMatrix::from_pw_distances(&[1, 5, 3]);
         assert_eq!(matrix1.get(1, 2), Some(&2));
         assert_eq!(matrix1.get(2, 1), None);
-        assert_eq!(matrix1.get_symmetric(2, 1), Some(Entry::Explicit(&2)));
+        assert_eq!(
+            matrix1.get_symmetric(2, 1).map(|x| x.get_or_default()),
+            Some(2)
+        );
     }
 }

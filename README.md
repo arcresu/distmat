@@ -22,7 +22,10 @@ fn main() {
     let matrix1 = DistMatrix::from_pw_distances(&[1, 5, 3]);
     assert_eq!(matrix1.get(1, 2), Some(&2));
     assert_eq!(matrix1.get(2, 1), None);
-    assert_eq!(matrix1.get_symmetric(2, 1), Some(2));
+        assert_eq!(
+            matrix1.get_symmetric(2, 1).map(|x| x.get_or_default()),
+            Some(2)
+        );
 
     // A square matrix stored in row major order:
     //   _1___5___3
