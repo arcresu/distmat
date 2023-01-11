@@ -58,6 +58,64 @@ pub struct Coordinates {
 pub type Iter<'a, D> = std::slice::Iter<'a, D>;
 pub type IterMut<'a, D> = std::slice::IterMut<'a, D>;
 
+/// Either a pointer to an explicit value or a marker that this is a diagonal.
+///
+/// Because the diagonal values are not represented in a [`DistMatrix`] and some of the iterators
+/// and accessors need to return a reference to a value, this type is used as a wrapper.
+///
+/// For the common case where `D` is a primitive numeric type, the entry should be converted into
+/// a value of type `D` using [`get_or_default`](Entry::get_or_default). This will give zero
+/// for the diagonals, which will normally be correct for distance measures.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Entry<'a, T> {
+    /// A value explicitly stored in the matrix.
+    Explicit(&'a T),
+    /// An entry on the diagonal of the matrix (normally zero).
+    Diagonal,
+}
+
+impl<'a, D> Entry<'a, D> {
+    /// Return a reference to the value or panic if the entry is a diagonal of the matrix.
+    #[inline]
+    pub fn unwrap(self) -> &'a D {
+        match self {
+            Self::Explicit(value) => value,
+            Self::Diagonal => panic!("unwrapped implicit value"),
+        }
+    }
+
+    /// Return a reference to the value or `diagonal` if the entry is a diagonal of the matrix.
+    #[inline]
+    pub fn unwrap_or(self, diagonal: &'a D) -> &'a D {
+        match self {
+            Self::Explicit(value) => value,
+            Self::Diagonal => diagonal,
+        }
+    }
+}
+
+impl<'a, D: Copy> Entry<'a, D> {
+    /// Return a copy of the value or `diagonal` if the entry is a diagonal of the matrix.
+    #[inline]
+    pub fn get_or(self, diagonal: D) -> D {
+        match self {
+            Self::Explicit(value) => *value,
+            Self::Diagonal => diagonal,
+        }
+    }
+}
+
+impl<'a, D: Copy + Default> Entry<'a, D> {
+    /// Return a copy of the value or the default value if the entry is a diagonal of the matrix.
+    #[inline]
+    pub fn get_or_default(self) -> D {
+        match self {
+            Self::Explicit(value) => *value,
+            Self::Diagonal => Default::default(),
+        }
+    }
+}
+
 /// Build a matrix from its values.
 ///
 /// The length of the source iterator should be `n * (n - 1) / 2` for some `n: usize`.
@@ -161,6 +219,25 @@ impl<D> DistMatrix<D> {
         Some(&mut self.data[index_for(self.size, row, col)])
     }
 
+    /// Retrieve an element by reference from the distance matrix.
+    ///
+    /// Coordinates are treated as logical coordinates in the full matrix, i.e. coordinates in the
+    /// upper triangle are reflected into the lower triangle, and coordinates on the diagonal
+    /// return the default value.
+    ///
+    /// If either of the indices exceeds the size of the distance matrix, `None` is returned.
+    pub fn get_symmetric(&self, row: usize, col: usize) -> Option<Entry<D>> {
+        if row >= self.size || col >= self.size {
+            return None;
+        }
+        if row == col {
+            return Some(Entry::Diagonal);
+        }
+        Some(Entry::Explicit(
+            &self.data[index_for(self.size, row.min(col), row.max(col))],
+        ))
+    }
+
     #[inline]
     fn label_to_index<S: AsRef<str>>(&self, label: S) -> Option<usize> {
         self.labels
@@ -177,6 +254,17 @@ impl<D> DistMatrix<D> {
         let row = self.label_to_index(row)?;
         let col = self.label_to_index(col)?;
         self.get(row, col)
+    }
+
+    /// Retrieve an element by reference from the distance matrix.
+    ///
+    /// Equivalent to [`get_symmetric`](DistMatrix::get_symmetric) after converting the labels to
+    /// indices, except that `None` will additionally be returned if either `row` or `col` are not
+    /// known labels.
+    pub fn get_symmetric_by_name<S: AsRef<str>>(&self, row: S, col: S) -> Option<Entry<D>> {
+        let row = self.label_to_index(row)?;
+        let col = self.label_to_index(col)?;
+        self.get_symmetric(row, col)
     }
 
     /// Decompose into the stored labels and data.
@@ -199,6 +287,44 @@ impl<D> DistMatrix<D> {
     /// The order corresponds to that of [`iter_coords`](DistMatrix::iter_coords).
     pub fn iter_mut(&mut self) -> IterMut<D> {
         self.data.iter_mut()
+    }
+
+    /// Iterate over rows of the distance matrix.
+    #[inline]
+    pub fn iter_rows(&self) -> Rows<D> {
+        Rows {
+            matrix: self,
+            row: 0..self.size,
+        }
+    }
+
+    /// Iterate over columns of the distance matrix.
+    ///
+    /// Since this is a symmetric matrix, this is the same as [`iter_rows`](DistMatrix::iter_rows).
+    #[inline]
+    pub fn iter_cols(&self) -> Rows<D> {
+        self.iter_rows()
+    }
+
+    /// Iterator over pairwise distances from the specified point to all points in order, including
+    /// itself.
+    #[inline]
+    pub fn iter_from_point(&self, idx: usize) -> Row<D> {
+        Row {
+            matrix: self,
+            row: idx,
+            span: Span::Initial,
+        }
+    }
+
+    /// Iterator over pairwise distances from all points (including itself) to the specified point
+    /// in order.
+    ///
+    /// Since this is a symmetric matrix, this is the same as
+    /// [`iter_from_point`](DistMatrix::iter_from_point).
+    #[inline]
+    pub fn iter_to_point(&self, idx: usize) -> Row<D> {
+        self.iter_from_point(idx)
     }
 
     /// Iterate over coordinates as `(row, column)`.
@@ -360,77 +486,6 @@ impl<D: Copy> DistMatrix<&D> {
     }
 }
 
-// FIXME find a way to remove these bounds. The problem is what to do when we want to return
-// a default value by reference. It's not obvious how to create a value with Default::default()
-// that has the appropriate lifetime.
-impl<D: Copy + Default> DistMatrix<D> {
-    /// Retrieve an element by reference from the distance matrix.
-    ///
-    /// Coordinates are treated as logical coordinates in the full matrix, i.e. coordinates in the
-    /// upper triangle are reflected into the lower triangle, and coordinates on the diagonal
-    /// return the default value.
-    ///
-    /// If either of the indices exceeds the size of the distance matrix, `None` is returned.
-    pub fn get_symmetric(&self, row: usize, col: usize) -> Option<D> {
-        if row >= self.size || col >= self.size {
-            return None;
-        }
-        if row == col {
-            return Some(D::default());
-        }
-        Some(self.data[index_for(self.size, row.min(col), row.max(col))])
-    }
-
-    /// Retrieve an element by reference from the distance matrix.
-    ///
-    /// Equivalent to [`get_symmetric`](DistMatrix::get_symmetric) after converting the labels to
-    /// indices, except that `None` will additionally be returned if either `row` or `col` are not
-    /// known labels.
-    pub fn get_symmetric_by_name<S: AsRef<str>>(&self, row: S, col: S) -> Option<D> {
-        let row = self.label_to_index(row)?;
-        let col = self.label_to_index(col)?;
-        self.get_symmetric(row, col)
-    }
-
-    /// Iterate over rows of the distance matrix.
-    #[inline]
-    pub fn iter_rows(&self) -> Rows<D> {
-        Rows {
-            matrix: self,
-            row: 0..self.size,
-        }
-    }
-
-    /// Iterate over columns of the distance matrix.
-    ///
-    /// Since this is a symmetric matrix, this is the same as [`iter_rows`](DistMatrix::iter_rows).
-    #[inline]
-    pub fn iter_cols(&self) -> Rows<D> {
-        self.iter_rows()
-    }
-
-    /// Iterator over pairwise distances from the specified point to all points in order, including
-    /// itself.
-    #[inline]
-    pub fn iter_from_point(&self, idx: usize) -> Row<D> {
-        Row {
-            matrix: self,
-            row: idx,
-            span: Span::Initial,
-        }
-    }
-
-    /// Iterator over pairwise distances from all points (including itself) to the specified point
-    /// in order.
-    ///
-    /// Since this is a symmetric matrix, this is the same as
-    /// [`iter_from_point`](DistMatrix::iter_from_point).
-    #[inline]
-    pub fn iter_to_point(&self, idx: usize) -> Row<D> {
-        self.iter_from_point(idx)
-    }
-}
-
 impl<'a, D> Iterator for Rows<'a, D> {
     type Item = Row<'a, D>;
 
@@ -468,8 +523,8 @@ enum Span<'a, D> {
     Contig(slice::Iter<'a, D>),
 }
 
-impl<'a, D: Copy + Default> Iterator for Row<'a, D> {
-    type Item = D;
+impl<'a, D> Iterator for Row<'a, D> {
+    type Item = Entry<'a, D>;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.span {
@@ -482,7 +537,7 @@ impl<'a, D: Copy + Default> Iterator for Row<'a, D> {
                 } else {
                     self.span = Span::ShrinkingStride(self.row - 1, self.matrix.size - 2);
                 };
-                Some(self.matrix.data[self.row - 1])
+                Some(Entry::Explicit(&self.matrix.data[self.row - 1]))
             }
             Span::ShrinkingStride(cursor, stride) => {
                 let cursor = cursor + stride;
@@ -491,15 +546,15 @@ impl<'a, D: Copy + Default> Iterator for Row<'a, D> {
                 } else {
                     Span::ShrinkingStride(cursor, stride - 1)
                 };
-                Some(self.matrix.data[cursor])
+                Some(Entry::Explicit(&self.matrix.data[cursor]))
             }
             Span::Diagonal => {
                 let start = index_for(self.matrix.size, self.row, self.row + 1);
                 let end = start + self.matrix.size - self.row - 1;
                 self.span = Span::Contig(self.matrix.data[start..end].iter());
-                Some(D::default())
+                Some(Entry::Diagonal)
             }
-            Span::Contig(ref mut iter) => iter.next().copied(),
+            Span::Contig(ref mut iter) => iter.next().map(Entry::Explicit),
         }
     }
 
@@ -509,7 +564,7 @@ impl<'a, D: Copy + Default> Iterator for Row<'a, D> {
     }
 }
 
-impl<'a, D: Copy + Default> ExactSizeIterator for Row<'a, D> {}
+impl<'a, D> ExactSizeIterator for Row<'a, D> {}
 
 impl Coordinates {
     /// Create an iterator compatible with a [`DistMatrix`] of size `n`.
@@ -635,6 +690,15 @@ mod tests {
     }
 
     #[test]
+    fn option_entry() {
+        let a = Entry::Explicit(&8);
+        let b = Entry::Diagonal;
+
+        assert_eq!(Some(a).map(Entry::get_or_default), Some(8));
+        assert_eq!(Some(b).map(Entry::get_or_default), Some(0));
+    }
+
+    #[test]
     fn test_n_items() {
         assert_eq!(n_items(0), 1);
         assert_eq!(n_items(1), 2);
@@ -689,27 +753,27 @@ mod tests {
         let m: DistMatrix<u32> = vec![1, 2, 3, 4, 1, 2, 3, 1, 2, 1].into();
 
         let mut r0 = m.iter_from_point(0);
-        assert_eq!(r0.next(), Some(0));
-        assert_eq!(r0.next(), Some(1));
-        assert_eq!(r0.next(), Some(2));
-        assert_eq!(r0.next(), Some(3));
-        assert_eq!(r0.next(), Some(4));
+        assert_eq!(r0.next(), Some(Entry::Diagonal));
+        assert_eq!(r0.next(), Some(Entry::Explicit(&1)));
+        assert_eq!(r0.next(), Some(Entry::Explicit(&2)));
+        assert_eq!(r0.next(), Some(Entry::Explicit(&3)));
+        assert_eq!(r0.next(), Some(Entry::Explicit(&4)));
         assert_eq!(r0.next(), None);
 
         let mut r1 = m.iter_from_point(1);
-        assert_eq!(r1.next(), Some(1));
-        assert_eq!(r1.next(), Some(0));
-        assert_eq!(r1.next(), Some(1));
-        assert_eq!(r1.next(), Some(2));
-        assert_eq!(r1.next(), Some(3));
+        assert_eq!(r1.next(), Some(Entry::Explicit(&1)));
+        assert_eq!(r1.next(), Some(Entry::Diagonal));
+        assert_eq!(r1.next(), Some(Entry::Explicit(&1)));
+        assert_eq!(r1.next(), Some(Entry::Explicit(&2)));
+        assert_eq!(r1.next(), Some(Entry::Explicit(&3)));
         assert_eq!(r1.next(), None);
 
         let mut r2 = m.iter_from_point(2);
-        assert_eq!(r2.next(), Some(2));
-        assert_eq!(r2.next(), Some(1));
-        assert_eq!(r2.next(), Some(0));
-        assert_eq!(r2.next(), Some(1));
-        assert_eq!(r2.next(), Some(2));
+        assert_eq!(r2.next(), Some(Entry::Explicit(&2)));
+        assert_eq!(r2.next(), Some(Entry::Explicit(&1)));
+        assert_eq!(r2.next(), Some(Entry::Diagonal));
+        assert_eq!(r2.next(), Some(Entry::Explicit(&1)));
+        assert_eq!(r2.next(), Some(Entry::Explicit(&2)));
         assert_eq!(r2.next(), None);
 
         // 0 1 2 3 4 5  ->
@@ -721,12 +785,12 @@ mod tests {
         let m: DistMatrix<u32> = vec![1, 2, 3, 4, 5, 1, 2, 3, 4, 1, 2, 3, 1, 2, 1].into();
 
         let mut r2 = m.iter_from_point(2);
-        assert_eq!(r2.next(), Some(2));
-        assert_eq!(r2.next(), Some(1));
-        assert_eq!(r2.next(), Some(0));
-        assert_eq!(r2.next(), Some(1));
-        assert_eq!(r2.next(), Some(2));
-        assert_eq!(r2.next(), Some(3));
+        assert_eq!(r2.next(), Some(Entry::Explicit(&2)));
+        assert_eq!(r2.next(), Some(Entry::Explicit(&1)));
+        assert_eq!(r2.next(), Some(Entry::Diagonal));
+        assert_eq!(r2.next(), Some(Entry::Explicit(&1)));
+        assert_eq!(r2.next(), Some(Entry::Explicit(&2)));
+        assert_eq!(r2.next(), Some(Entry::Explicit(&3)));
         assert_eq!(r2.next(), None);
     }
 
@@ -735,8 +799,8 @@ mod tests {
         let m: DistMatrix<u32> = vec![1, 2, 3, 4, 1, 2, 3, 1, 2, 1].into();
         assert_eq!(m.get(0, 3), Some(&3));
         assert_eq!(m.get(3, 0), None);
-        assert_eq!(m.get_symmetric(3, 0), Some(3));
-        assert_eq!(m.get_symmetric(2, 2), Some(0));
+        assert_eq!(m.get_symmetric(3, 0), Some(Entry::Explicit(&3)));
+        assert_eq!(m.get_symmetric(2, 2), Some(Entry::Diagonal));
     }
 
     #[test]
@@ -745,14 +809,19 @@ mod tests {
         m.set_labels(mk_labels(["A", "B", "C", "D", "E"]));
         assert_eq!(m.get_by_name("A", "D"), Some(&3));
         assert_eq!(m.get_by_name("D", "A"), None);
-        assert_eq!(m.get_symmetric_by_name("D", "A"), Some(3));
+        assert_eq!(m.get_symmetric_by_name("D", "A"), Some(Entry::Explicit(&3)));
     }
 
     #[test]
     fn test_iter_rows() {
         fn expect_row(row: Option<Row<u32>>, reference: Vec<u32>) {
             assert!(row.is_some());
-            assert_eq!(row.unwrap().collect::<Vec<u32>>(), reference);
+            assert_eq!(
+                row.unwrap()
+                    .map(Entry::get_or_default)
+                    .collect::<Vec<u32>>(),
+                reference
+            );
         }
 
         // 0 1 2 3 4  ->
@@ -843,6 +912,6 @@ mod tests {
         let matrix1 = DistMatrix::from_pw_distances(&[1, 5, 3]);
         assert_eq!(matrix1.get(1, 2), Some(&2));
         assert_eq!(matrix1.get(2, 1), None);
-        assert_eq!(matrix1.get_symmetric(2, 1), Some(2));
+        assert_eq!(matrix1.get_symmetric(2, 1), Some(Entry::Explicit(&2)));
     }
 }

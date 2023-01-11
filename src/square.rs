@@ -10,7 +10,7 @@ use crate::builder::{DataError, DistBuilder};
 use crate::formats::{
     parse_phylip, parse_tabular, PhylipDialect, PhylipError, Separator, TabularError, TabularShape,
 };
-use crate::symmetric::{n_entries, Coordinates};
+use crate::symmetric::{n_entries, Coordinates, Entry};
 use crate::{open_file, AbsDiff, DistMatrix};
 
 /// Stores a full distance matrix in row-major order.
@@ -345,7 +345,11 @@ impl<D: Copy> SquareMatrix<&D> {
 impl<D: Copy + Default> From<DistMatrix<D>> for SquareMatrix<D> {
     #[inline]
     fn from(matrix: DistMatrix<D>) -> Self {
-        matrix.iter_rows().flatten().collect()
+        matrix
+            .iter_rows()
+            .flatten()
+            .map(Entry::get_or_default)
+            .collect()
     }
 }
 
