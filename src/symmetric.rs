@@ -10,7 +10,7 @@ use crate::formats::{
     parse_phylip_lt, parse_tabular_lt, PhylipDialect, PhylipError, Separator, TabularError,
 };
 pub use crate::square::Labels;
-use crate::{open_file, AbsDiff};
+use crate::{open_file, AbsDiff, SquareMatrix};
 
 /// Stores the lower triangle of a matrix.
 ///
@@ -416,6 +416,17 @@ impl<D> DistMatrix<D> {
     #[inline]
     pub fn size(&self) -> usize {
         self.size
+    }
+
+    /// Convert into a square matrix by mirroring the lower triangle and filling the diagonal.
+    ///
+    /// Note that if `D: Copy + Default` then you can instead use
+    /// `let square: SquareMatrix<D> = dist_matrix.into()`.
+    pub fn as_square<'a>(&'a self, diagonal: &'a D) -> SquareMatrix<&'a D> {
+        self.iter_rows()
+            .flatten()
+            .map(|entry| entry.unwrap_or(diagonal))
+            .collect()
     }
 }
 
@@ -900,6 +911,17 @@ mod tests {
         let labels: Vec<&str> = m.iter_labels().collect();
         assert_eq!(labels, vec!["seq1", "seq2", "seq3", "seq4"]);
         assert_eq!(m.size(), 4);
+    }
+
+    #[test]
+    fn as_square() {
+        let sym = DistMatrix::<i32>::from_pw_distances(&[1, 6, 8, 9, 3]);
+        let m1: SquareMatrix<i32> = sym.as_square(&0).copied();
+        let m2 = SquareMatrix::<i32>::from_pw_distances(&[1, 6, 8, 9, 3]);
+        assert_eq!(m1, m2);
+
+        let m1: SquareMatrix<i32> = sym.into();
+        assert_eq!(m1, m2);
     }
 
     #[test]
