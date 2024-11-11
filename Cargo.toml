@@ -10,5 +10,5 @@ repository = "https://github.com/cidm-ph/distmat/"
 readme = "README.md"
 
 [dependencies]
-thiserror = "1.0"
+thiserror = "2.0"
 flate2 = "1.0"
